@@ -44,4 +44,4 @@ __screenshots__/
 Thumbs.db
 
 # Local dev session bypass (contains a real session_gid/email — never commit)
-src/assets/local-session.dev.json
+public/assets/local-session.dev.json
