@@ -1,0 +1,8 @@
+<div class="page">
+  <h1>CES User Access Control</h1>
+  @if (session.isSystemManager()) {
+    <p class="tag">Signed in as system manager</p>
+  }
+  <p>Signed in as {{ session.session()?.email }}.</p>
+  <p class="muted">Nothing built here yet — this is the session-gated placeholder page.</p>
+</div>

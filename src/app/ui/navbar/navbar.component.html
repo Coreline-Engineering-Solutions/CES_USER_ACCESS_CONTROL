@@ -1,0 +1,9 @@
+<nav class="navbar">
+  <div class="navbar__brand">CES User Access Control</div>
+  <div class="navbar__user">
+    @if (session.session(); as s) {
+      <span class="navbar__email">{{ s.email }}</span>
+      <button class="navbar__signout" type="button" (click)="signOut()">Sign out</button>
+    }
+  </div>
+</nav>

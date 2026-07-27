@@ -1,0 +1,9 @@
+<div class="signed-out">
+  @if (loading) {
+    <p>Checking your session…</p>
+  } @else {
+    <h1>You're not signed in</h1>
+    <p>Sign in through the Coreline Engineering Solutions account portal to continue.</p>
+    <button type="button" (click)="signIn()">Go to sign in</button>
+  }
+</div>
