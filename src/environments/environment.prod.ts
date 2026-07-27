@@ -1,5 +1,5 @@
 export const environment = {
   production: true,
-  // TODO: point this at the real CES_USER_ACCESS_CONTROL backend once it's deployed on Render.
-  apiBaseUrl: 'https://REPLACE_ME.onrender.com'
+  // Per STOCK_ROLES_API_HANDOVER.md (2026-07-26) — same GIS API as CES_MODULES/CES_NG_GIS.
+  apiBaseUrl: 'https://gis-api.onrender.com'
 };
