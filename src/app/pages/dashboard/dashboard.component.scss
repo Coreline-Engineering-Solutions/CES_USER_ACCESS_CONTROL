@@ -1,15 +1,16 @@
 .page {
   padding: 32px;
-  font-family: system-ui, sans-serif;
 
   h1 {
     margin: 0 0 16px;
+    color: var(--gc-text);
   }
 
   .tag {
     display: inline-block;
-    background: #eef2ff;
-    color: #3730a3;
+    background: rgba(37, 99, 235, 0.14);
+    color: #7ba3f2;
+    border: 1px solid rgba(37, 99, 235, 0.32);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 12px;
@@ -17,7 +18,11 @@
     margin-bottom: 12px;
   }
 
+  p {
+    color: var(--gc-text);
+  }
+
   .muted {
-    color: #6b7280;
+    color: var(--gc-text-muted);
   }
 }

@@ -158,6 +158,26 @@ export class SessionService {
     return this.session()?.user_gid || '';
   }
 
+  private readonly privilegeCache = new Map<string, boolean>();
+
+  /**
+   * Checks an Auth-API privilege (e.g. `_manage_client_roles`/`_stock_admin`
+   * — see STOCK_ROLES_API_HANDOVER.md) via `_check_function_permission`,
+   * same mechanism `isSystemManager` already uses internally. Cached per
+   * (utility, privilege) pair for the life of the session.
+   */
+  async hasPrivilege(privilege: string, utility: string = 'GIS System'): Promise<boolean> {
+    const key = `${utility}::${privilege}`;
+    if (this.privilegeCache.has(key)) return this.privilegeCache.get(key)!;
+
+    const sess = this.session();
+    if (!sess) return false;
+
+    const result = await this.checkPermission(sess.session_gid, utility, privilege);
+    this.privilegeCache.set(key, result);
+    return result;
+  }
+
   readCookie(name: string): string | null {
     const fromJsCookie = Cookies.get(name);
     if (fromJsCookie) return fromJsCookie;
@@ -185,6 +205,7 @@ export class SessionService {
     this.session.set(null);
     this.accessList.set([]);
     this.isSystemManager.set(false);
+    this.privilegeCache.clear();
     this.redirectIfInvalidInProd();
   }
 

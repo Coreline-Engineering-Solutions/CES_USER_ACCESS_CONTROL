@@ -1,5 +1,9 @@
 <nav class="navbar">
-  <div class="navbar__brand">CES User Access Control</div>
+  <div class="navbar__brand">CES ACCESS CONTROL</div>
+  <div class="navbar__links">
+    <a class="navbar__link" routerLink="/" routerLinkActive="navbar__link--on" [routerLinkActiveOptions]="{ exact: true }">Dashboard</a>
+    <a class="navbar__link" routerLink="/access" routerLinkActive="navbar__link--on">Access control</a>
+  </div>
   <div class="navbar__user">
     @if (session.session(); as s) {
       <span class="navbar__email">{{ s.email }}</span>

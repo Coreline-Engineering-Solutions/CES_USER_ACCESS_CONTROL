@@ -10,15 +10,16 @@
 
   h1 {
     margin: 0 0 8px;
+    color: var(--gc-text);
   }
 
   p {
-    color: #6b7280;
+    color: var(--gc-text-muted);
     margin: 0 0 20px;
   }
 
   button {
-    background: #2563eb;
+    background: var(--gc-accent);
     color: #fff;
     border: none;
     border-radius: 6px;
@@ -27,7 +28,7 @@
     cursor: pointer;
 
     &:hover {
-      background: #1d4ed8;
+      background: var(--gc-primary-dark);
     }
   }
 }
