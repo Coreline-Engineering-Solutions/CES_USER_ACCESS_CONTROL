@@ -1,13 +1,63 @@
 <nav class="navbar">
-  <div class="navbar__brand">CES ACCESS CONTROL</div>
+  <div class="brand">
+    <img src="/assets/CESLogoWhite.png" alt="CES" class="logo-img" />
+    <span class="title">CES Access Control</span>
+  </div>
   <div class="navbar__links">
     <a class="navbar__link" routerLink="/" routerLinkActive="navbar__link--on" [routerLinkActiveOptions]="{ exact: true }">Dashboard</a>
     <a class="navbar__link" routerLink="/access" routerLinkActive="navbar__link--on">Access control</a>
   </div>
-  <div class="navbar__user">
+  <div class="right">
     @if (session.session(); as s) {
-      <span class="navbar__email">{{ s.email }}</span>
-      <button class="navbar__signout" type="button" (click)="signOut()">Sign out</button>
+      <button class="avatar" title="Account" (click)="toggleProfileMenu()">
+        @if (session.profileImage()) {
+          <img [src]="session.profileImage()" alt="" class="avatar-img" />
+        } @else {
+          <span class="avatar-initial">{{ userInitial }}</span>
+        }
+      </button>
+
+      @if (showProfileMenu()) {
+        <div class="profile-menu-overlay" (click)="closeProfileMenu()"></div>
+        <div class="profile-menu">
+          <div class="profile-menu-header">
+            <div class="profile-menu-avatar">
+              @if (session.profileImage()) {
+                <img [src]="session.profileImage()" alt="" />
+              } @else {
+                <span>{{ userInitial }}</span>
+              }
+            </div>
+            <div class="profile-menu-info">
+              <span class="profile-menu-email">{{ s.email }}</span>
+            </div>
+          </div>
+          <div class="profile-menu-divider"></div>
+          <a class="profile-menu-item" href="https://www.corelineengineering.com/DashBoard" target="_self">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            Main site
+          </a>
+          <a class="profile-menu-item" href="https://www.corelineengineering.com/Profile" target="_self">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+            Profile
+          </a>
+          <div class="profile-menu-divider"></div>
+          <button type="button" class="profile-menu-item profile-menu-item--danger" (click)="signOut()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            Sign out
+          </button>
+        </div>
+      }
     }
   </div>
 </nav>
