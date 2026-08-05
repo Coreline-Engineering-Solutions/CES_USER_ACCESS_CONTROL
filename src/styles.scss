@@ -26,7 +26,16 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  background: radial-gradient(1200px 800px at 50% 0%, rgba(37, 99, 235, 0.18), rgba(4, 11, 26, 1));
+  /* Percentage radii + a transparent final stop, so the glow fades into the
+     base colour instead of ending on a hard elliptical edge — a fixed 1200x800
+     ellipse left a visible arc across wide monitors. */
+  background:
+    radial-gradient(140% 90% at 50% -10%,
+      rgba(37, 99, 235, 0.16) 0%,
+      rgba(37, 99, 235, 0.05) 38%,
+      rgba(37, 99, 235, 0) 72%),
+    var(--gc-bg);
+  background-attachment: fixed;
   color: var(--gc-text);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   font-size: 13.5px;
@@ -68,15 +77,17 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
   background: var(--gc-surface-2); font-size: 12px; color: var(--gc-text-muted); display: flex; gap: 9px; align-items: flex-start;
 }
 .hiernote.warn { border-color: rgba(245, 158, 11, 0.4); color: var(--gc-warning); }
+.hiernote.ok { border-color: rgba(22, 163, 74, 0.4); color: var(--gc-success); }
 .hiernote .i {
   width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--gc-accent); color: var(--gc-accent);
   display: grid; place-items: center; font-size: 9.5px; flex: 0 0 15px; margin-top: 1px;
 }
 .hiernote.warn .i { border-color: var(--gc-warning); color: var(--gc-warning); }
+.hiernote.ok .i { border-color: var(--gc-success); color: var(--gc-success); }
 
 .statstrip { display: flex; gap: 12px; padding: 14px 18px 4px; flex-wrap: wrap; }
 .stat { background: var(--gc-surface-1); border: 1px solid var(--gc-border); border-radius: 10px; padding: 10px 16px; min-width: 130px; }
-.stat .v { font-size: 18px; font-weight: 600; font-family: ui-monospace, Consolas, monospace; }
+.stat .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .stat .v.warn { color: var(--gc-warning); } .stat .v.err { color: var(--gc-error); } .stat .v.ok { color: var(--gc-success); }
 .stat .l { font-size: 10.5px; color: var(--gc-text-muted); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 2px; }
 
@@ -90,12 +101,12 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 
 .holdings { margin: 8px 0 4px; }
 .hrow { display: flex; align-items: center; gap: 10px; padding: 3.5px 0; font-size: 12px; }
-.hrow .hc { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--gc-primary-light); width: 76px; flex: 0 0 76px; }
-.hrow .hv { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--gc-text-muted); margin-left: auto; }
+.hrow .hc { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--gc-primary-light); width: 76px; flex: 0 0 76px; }
+.hrow .hv { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--gc-text-muted); margin-left: auto; }
 
 .pill {
   font-size: 10px; padding: 2.5px 7px; border-radius: 6px; background: var(--gc-surface-2);
-  border: 1px solid var(--gc-border); color: var(--gc-text-muted); font-family: ui-monospace, Consolas, monospace;
+  border: 1px solid var(--gc-border); color: var(--gc-text-muted); font-variant-numeric: tabular-nums;
   text-transform: capitalize; display: inline-block;
 }
 .pill.ok { color: var(--gc-success); border-color: rgba(22, 163, 74, 0.45); }
@@ -120,26 +131,43 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
   font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gc-text-muted);
   font-weight: 600; display: flex; gap: 7px; align-items: center; margin-bottom: 10px;
 }
-.col h4 .n { color: var(--gc-neutral); font-family: ui-monospace, monospace; }
+.col h4 .n { color: var(--gc-neutral); font-variant-numeric: tabular-nums; }
 .tcard { background: var(--gc-surface-1); border: 1px solid var(--gc-border); border-radius: 10px; padding: 11px 13px; margin-bottom: 10px; }
 .tcard:hover { border-color: rgba(37, 99, 235, 0.35); }
-.tcard .no { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--gc-primary-light); }
+.tcard .no { font-variant-numeric: tabular-nums; font-size: 11.5px; color: var(--gc-primary-light); }
 .tcard .route { font-size: 12.5px; margin: 4px 0 7px; }
 .tcard .route span { color: var(--gc-neutral); }
 .tcard .meta { display: flex; gap: 6px; flex-wrap: wrap; }
 .tcard .act { margin-top: 9px; }
 .tcard .act .btn { padding: 5px 11px; font-size: 12px; }
 
-.tablewrap { flex: 1; overflow: auto; }
-table { width: 100%; border-collapse: collapse; }
-th {
-  position: sticky; top: 0; background: var(--gc-surface-1); text-align: left; font-size: 10.5px;
-  letter-spacing: 0.08em; text-transform: uppercase; color: var(--gc-text-muted); font-weight: 600;
-  padding: 10px 14px; border-bottom: 1px solid var(--gc-border); white-space: nowrap; z-index: 2;
+/* Tables sit on their own surface rather than floating on the page glow —
+   body text over a gradient was the main thing making them hard to read. */
+.tablewrap {
+  flex: 1; overflow: auto; margin: 14px 18px 20px;
+  background: var(--gc-surface-1); border: 1px solid var(--gc-border); border-radius: 12px;
 }
-td { padding: 9px 14px; border-bottom: 1px solid rgba(209, 213, 219, 0.06); font-size: 12.5px; color: var(--gc-text-muted); white-space: nowrap; }
-td.num { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
-tr:hover td { background: var(--gc-surface-2); }
+table { width: 100%; border-collapse: collapse; }
+/* On a wide monitor `width: 100%` spreads the slack evenly, so a cell holding
+   "2,000" ends up ~180px and the eye has to travel between values. Giving the
+   last column all the slack sizes the rest to their content instead. */
+th:last-child, td:last-child { width: 100%; }
+th {
+  position: sticky; top: 0; background: var(--gc-surface-2); text-align: left; font-size: 11px;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--gc-text-muted); font-weight: 600;
+  padding: 11px 16px; border-bottom: 1px solid var(--gc-border); white-space: nowrap; z-index: 2;
+}
+/* Full-strength text: --gc-text-muted is for labels and captions, not row content. */
+td {
+  padding: 11px 16px; border-bottom: 1px solid rgba(209, 213, 219, 0.07);
+  font-size: 13px; color: var(--gc-text); white-space: nowrap; vertical-align: middle;
+}
+td.num { font-variant-numeric: tabular-nums; }
+tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.018); }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: rgba(37, 99, 235, 0.09); }
+/* Action buttons shouldn't inflate row height. */
+td .btn { padding: 5px 11px; font-size: 12px; }
 
 .btn {
   border: 1px solid var(--gc-border); border-radius: 8px; padding: 7px 13px; font-size: 12.5px;
@@ -165,7 +193,7 @@ tr:hover td { background: var(--gc-surface-2); }
 }
 .m-h { padding: 16px 18px; border-bottom: 1px solid var(--gc-border); display: flex; align-items: baseline; gap: 10px; }
 .m-h h3 { font-size: 16px; font-weight: 600; margin: 0; color: var(--gc-text); }
-.m-h .no { font-family: ui-monospace, monospace; font-size: 12px; color: var(--gc-primary-light); }
+.m-h .no { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--gc-primary-light); }
 .m-h .x { margin-left: auto; color: var(--gc-text-muted); background: none; border: none; cursor: pointer; font-size: 14px; }
 .m-route {
   padding: 10px 18px; border-bottom: 1px solid var(--gc-border); font-size: 12.5px;
@@ -184,7 +212,7 @@ tr:hover td { background: var(--gc-surface-2); }
 .field-row .field { flex: 1; }
 .inp {
   background: var(--gc-bg); border: 1px solid var(--gc-border); border-radius: 8px; color: var(--gc-text);
-  font-family: ui-monospace, Consolas, monospace; font-size: 12px; padding: 8px 10px; width: 100%;
+  font-variant-numeric: tabular-nums; font-size: 12px; padding: 8px 10px; width: 100%;
 }
 .inp::placeholder { color: var(--gc-neutral); }
 .inp:focus { outline: none; border-color: var(--gc-accent); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18); }
