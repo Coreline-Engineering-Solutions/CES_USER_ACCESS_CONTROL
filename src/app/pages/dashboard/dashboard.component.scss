@@ -1,28 +1,117 @@
-.page {
-  padding: 32px;
+/* Screen-specific only — .panel/.stat/.hrow/.pill come from styles.scss.
+   Mirrors CES_STOCK_MANAGER's dashboard so the two apps read the same. */
 
-  h1 {
-    margin: 0 0 16px;
-    color: var(--gc-text);
+.queues {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  padding: 14px 18px 4px;
+}
+
+.qcard {
+  background: var(--gc-surface-1);
+  border: 1px solid var(--gc-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  transition: all 0.15s ease;
+
+  &:hover {
+    border-color: rgba(37, 99, 235, 0.35);
+    transform: translateY(-1px);
+  }
+}
+
+.qv {
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--gc-text);
+  line-height: 1.1;
+
+  &.warn { color: var(--gc-warning); }
+}
+
+.qt {
+  font-size: 13px;
+  color: var(--gc-text);
+  margin-top: 4px;
+}
+
+.qs {
+  font-size: 11.5px;
+  color: var(--gc-text-muted);
+  margin-top: 2px;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
+  padding: 14px 18px 20px;
+}
+
+.half {
+  background: var(--gc-surface-1);
+  border: 1px solid var(--gc-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.sec-h {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gc-text-muted);
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+.empty {
+  color: var(--gc-text-muted);
+  font-size: 12.5px;
+  margin: 0;
+
+  a { color: var(--gc-primary-light); }
+}
+
+/* Grants-by-role bars — the pill carries the role's own colour, so the bar
+   stays neutral rather than competing with it. */
+.rolebars {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.rolebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .pill { flex: 0 0 84px; text-align: center; }
+
+  .track {
+    flex: 1;
+    height: 7px;
+    border-radius: 4px;
+    background: var(--gc-surface-2);
+    overflow: hidden;
   }
 
-  .tag {
-    display: inline-block;
-    background: rgba(37, 99, 235, 0.14);
-    color: #7ba3f2;
-    border: 1px solid rgba(37, 99, 235, 0.32);
-    border-radius: 6px;
-    padding: 4px 10px;
+  .fill {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--gc-accent);
+  }
+
+  .n {
+    font-variant-numeric: tabular-nums;
     font-size: 12px;
-    font-weight: 600;
-    margin-bottom: 12px;
-  }
-
-  p {
-    color: var(--gc-text);
-  }
-
-  .muted {
     color: var(--gc-text-muted);
+    min-width: 22px;
+    text-align: right;
   }
 }

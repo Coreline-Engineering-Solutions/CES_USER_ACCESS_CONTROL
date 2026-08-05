@@ -50,7 +50,7 @@
 
       <div class="tablewrap" style="margin-top:14px">
         <table>
-          <thead><tr><th>User</th><th>Scope</th><th>Location / Org</th><th>Role</th>@if (canAdmin()) { <th>Action</th> }</tr></thead>
+          <thead><tr><th>User</th><th>Scope</th><th>Location / Org</th><th>Role</th>@if (canAdmin()) { <th class="actions">Action</th> }</tr></thead>
           <tbody>
             @for (g of grants(); track g.global_id) {
               <tr>
@@ -59,7 +59,7 @@
                 <td>{{ g.scope === 'location' ? locationName(g.location_id) : (g.scope === 'org' ? (g.org_id ? g.org_id.slice(0,8) + '…' : '—') : 'all locations') }}</td>
                 <td><span class="pill" [class]="'role-' + g.role">{{ g.role }}</span></td>
                 @if (canAdmin()) {
-                  <td><button class="btn" [disabled]="revoking() === g.global_id" (click)="revokeGrant(g)">{{ revoking() === g.global_id ? 'Revoking…' : 'Revoke' }}</button></td>
+                  <td class="actions"><button class="btn" [disabled]="revoking() === g.global_id" (click)="revokeGrant(g)">{{ revoking() === g.global_id ? 'Revoking…' : 'Revoke' }}</button></td>
                 }
               </tr>
             } @empty {
@@ -90,13 +90,13 @@
           }
           <div class="tablewrap" style="margin-top:12px">
             <table>
-              <thead><tr><th>Name</th><th>Utility</th>@if (canManageRoles()) { <th>Action</th> }</tr></thead>
+              <thead><tr><th>Name</th><th>Utility</th>@if (canManageRoles()) { <th class="actions">Action</th> }</tr></thead>
               <tbody>
                 @for (r of roles(); track r.role_gid) {
                   <tr>
                     <td>{{ r.role_name }}</td>
                     <td class="num">{{ r.utility_name }}</td>
-                    @if (canManageRoles()) { <td><button class="btn" (click)="deleteRole(r)">Delete</button></td> }
+                    @if (canManageRoles()) { <td class="actions"><button class="btn" (click)="deleteRole(r)">Delete</button></td> }
                   </tr>
                 } @empty { <tr><td colspan="3" style="color:var(--gc-text-muted)">No roles yet.</td></tr> }
               </tbody>
@@ -178,7 +178,7 @@
 
       <div class="tablewrap" style="margin-top:14px">
         <table>
-          <thead><tr><th>User GID</th><th>Role</th><th>Assigned by</th><th>Assigned</th>@if (canManageRoles()) { <th>Action</th> }</tr></thead>
+          <thead><tr><th>User GID</th><th>Role</th><th>Assigned by</th><th>Assigned</th>@if (canManageRoles()) { <th class="actions">Action</th> }</tr></thead>
           <tbody>
             @for (a of assignments(); track a.user_gid + a.role_gid) {
               <tr>
@@ -186,7 +186,7 @@
                 <td>{{ a.role_name }}</td>
                 <td class="num">{{ a.assigned_by }}</td>
                 <td class="num">{{ a.assigned_date | slice:0:10 }}</td>
-                @if (canManageRoles()) { <td><button class="btn" (click)="openRevokeAssignment(a)">Revoke</button></td> }
+                @if (canManageRoles()) { <td class="actions"><button class="btn" (click)="openRevokeAssignment(a)">Revoke</button></td> }
               </tr>
             } @empty { <tr><td colspan="5" style="color:var(--gc-text-muted)">No user-role assignments yet.</td></tr> }
           </tbody>

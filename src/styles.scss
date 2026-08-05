@@ -168,6 +168,11 @@ tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: rgba(37, 99, 235, 0.09); }
 /* Action buttons shouldn't inflate row height. */
 td .btn { padding: 5px 11px; font-size: 12px; }
+/* An action column is normally last, so it absorbs the table's slack (see the
+   last-child rule above) — left-aligned controls then drift far from the row
+   they act on. Pin them to the right edge instead. */
+th.actions, td.actions { text-align: right; }
+td.actions .btn + .btn { margin-left: 6px; }
 
 .btn {
   border: 1px solid var(--gc-border); border-radius: 8px; padding: 7px 13px; font-size: 12.5px;

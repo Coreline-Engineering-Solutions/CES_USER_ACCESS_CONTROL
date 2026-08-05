@@ -1,8 +1,118 @@
-<div class="page">
-  <h1>CES User Access Control</h1>
-  @if (session.isSystemManager()) {
-    <p class="tag">Signed in as system manager</p>
+<div class="panel">
+  <div class="panel-h">
+    <h2>Access overview</h2>
+    <span class="sub">{{ session.session()?.email }}</span>
+    @if (session.isSystemManager()) {
+      <span class="pill role-controller">system manager</span>
+    }
+    <button class="btn" style="margin-left:auto" [disabled]="loading()" (click)="load()">
+      {{ loading() ? 'Refreshing…' : '↻ Refresh' }}
+    </button>
+  </div>
+
+  @if (error()) {
+    <div class="hiernote warn">
+      <span class="i">!</span>
+      <span>{{ error() }}</span>
+    </div>
   }
-  <p>Signed in as {{ session.session()?.email }}.</p>
-  <p class="muted">Nothing built here yet — this is the session-gated placeholder page.</p>
+
+  @if (loading()) {
+    <div style="padding:24px 18px;color:var(--gc-text-muted)">Loading access overview…</div>
+  } @else {
+    <div class="statstrip">
+      <div class="stat">
+        <div class="v">{{ grants().length }}</div>
+        <div class="l">Location grants</div>
+      </div>
+      <div class="stat">
+        <div class="v">{{ distinctUsers() }}</div>
+        <div class="l">People with access</div>
+      </div>
+      <div class="stat">
+        <div class="v">{{ locations().length }}</div>
+        <div class="l">Locations</div>
+      </div>
+      <div class="stat">
+        <div class="v">{{ roles().length }}</div>
+        <div class="l">Client roles</div>
+      </div>
+      <div class="stat">
+        <div class="v">{{ privileges().length }}</div>
+        <div class="l">Privileges</div>
+      </div>
+      <div class="stat">
+        <div class="v">{{ assignments().length }}</div>
+        <div class="l">Role assignments</div>
+      </div>
+    </div>
+
+    <div class="queues">
+      <a class="qcard" routerLink="/access">
+        <div class="qv" [class.warn]="clientWide().length > 0">{{ clientWide().length }}</div>
+        <div class="qt">Client-wide grants</div>
+        <div class="qs">Reach every location, including ones created later</div>
+      </a>
+      <a class="qcard" routerLink="/access">
+        <div class="qv" [class.warn]="orgWide().length > 0">{{ orgWide().length }}</div>
+        <div class="qt">Org-wide grants</div>
+        <div class="qs">Every location under one organisation</div>
+      </a>
+      <a class="qcard" routerLink="/access">
+        <div class="qv" [class.warn]="elevated().length > 0">{{ elevated().length }}</div>
+        <div class="qt">Elevated roles</div>
+        <div class="qs">Controller, auditor or custodian — more than read access</div>
+      </a>
+      <a class="qcard" routerLink="/access">
+        <div class="qv">{{ ungrantedLocations().length }}</div>
+        <div class="qt">No direct grant</div>
+        <div class="qs">Locations nobody holds a location-scoped grant on</div>
+      </a>
+    </div>
+
+    <div class="split">
+      <section class="half">
+        <h4 class="sec-h">Grants by role</h4>
+        @if (byRole().length === 0) {
+          <p class="empty">No location grants yet. <a routerLink="/access">Grant access</a> to get started.</p>
+        } @else {
+          <div class="rolebars">
+            @for (row of byRole(); track row.role) {
+              <div class="rolebar">
+                <span class="pill" [class]="'pill role-' + row.role">{{ row.role }}</span>
+                <span class="track"><span class="fill" [style.width]="barWidth(row.count)"></span></span>
+                <span class="n">{{ row.count }}</span>
+              </div>
+            }
+          </div>
+        }
+      </section>
+
+      <section class="half">
+        <h4 class="sec-h">Recent role assignments</h4>
+        @if (recentAssignments().length === 0) {
+          <p class="empty">No client roles assigned to anyone yet.</p>
+        } @else {
+          <div class="holdings">
+            @for (a of recentAssignments(); track a.user_gid + a.role_gid) {
+              <div class="hrow">
+                <span class="hc">{{ a.user_gid.slice(0, 8) }}…</span>
+                <span>{{ a.role_name }}</span>
+                <span class="hv">{{ a.assigned_date ? a.assigned_date.slice(0, 10) : '—' }}</span>
+              </div>
+            }
+          </div>
+        }
+      </section>
+    </div>
+
+    <div class="hiernote warn" style="margin-bottom:20px">
+      <span class="i">!</span>
+      <span>
+        Location grants are recorded here but <b>Stock Manager does not read them yet</b> — every
+        stock screen currently gates on a global privilege instead. Until that is wired up, the
+        counts above describe intent, not what anyone is actually prevented from doing.
+      </span>
+    </div>
+  }
 </div>
