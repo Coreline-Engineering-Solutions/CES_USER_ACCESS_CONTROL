@@ -177,7 +177,13 @@ td.actions .btn + .btn { margin-left: 6px; }
 .btn {
   border: 1px solid var(--gc-border); border-radius: 8px; padding: 7px 13px; font-size: 12.5px;
   color: var(--gc-text-muted); background: var(--gc-surface-2); transition: all 0.15s ease; cursor: pointer;
+  /* inline-flex + gap so a leading icon sits on the text baseline without
+     per-button margins. Text-only buttons are unaffected. */
+  display: inline-flex; align-items: center; gap: 6px;
 }
+/* Icons are inline stroke SVGs on a 24 viewBox, matching CES_MODULES —
+   they inherit the button's colour and never carry their own fill. */
+.btn svg { flex: 0 0 auto; }
 .btn:hover:not(:disabled) {
   transform: translateY(-1px); background: rgba(37, 99, 235, 0.14); border-color: rgba(37, 99, 235, 0.28); color: var(--gc-text);
 }
