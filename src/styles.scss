@@ -141,6 +141,20 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .tcard .act { margin-top: 9px; }
 .tcard .act .btn { padding: 5px 11px; font-size: 12px; }
 
+/* A terminal-state entry — approved, closed, rejected, received — carries no
+   action and needs far less room than an active .tcard. Column-first list
+   layout in ~30px instead of a full card, so history can accumulate without
+   pushing the column into an endless scroll of near-empty cards. */
+.trow {
+  display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 7px;
+  font-size: 12px; margin-bottom: 3px; color: var(--gc-text-muted);
+}
+.trow:hover { background: var(--gc-surface-2); }
+.trow .no { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--gc-primary-light); flex: 0 0 auto; }
+.trow .route { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trow .route span { color: var(--gc-neutral); }
+.trow .pill { flex: 0 0 auto; }
+
 /* Tables sit on their own surface rather than floating on the page glow —
    body text over a gradient was the main thing making them hard to read. */
 .tablewrap {
