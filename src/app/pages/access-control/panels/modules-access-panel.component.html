@@ -1,0 +1,109 @@
+<div class="hiernote">
+  <span class="i">i</span>
+  <span>Access to a module is granted per user at one of three levels: manager / contributor / viewer. You can only manage access on a module you're already a manager of yourself (or hold GIS System Manager) — same rule Modules' own access panel enforces.</span>
+</div>
+
+@if (error()) {
+  <div class="hiernote warn"><span class="i">!</span><span>{{ error() }}</span></div>
+}
+
+@if (loading()) {
+  <div style="padding:24px 18px;color:var(--gc-text-muted)">Loading…</div>
+} @else {
+  <div style="display:flex;align-items:baseline;gap:10px;padding:16px 18px 0">
+    <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em">Modules</h3>
+    <span style="flex:1;height:1px;background:var(--gc-border)"></span>
+  </div>
+
+  <div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr));padding-top:10px">
+    @for (m of modules(); track m.module_gid) {
+      <div class="lcard" [class.on]="selectedModuleGid() === m.module_gid" style="cursor:pointer" (click)="selectModule(m.module_gid)">
+        <div class="lcard-h">
+          <div>
+            <h3>{{ m.description }}</h3>
+            @if (canManageModule(m.module_gid)) {
+              <small class="pill ok" style="margin-top:4px;display:inline-block">you manage this</small>
+            }
+          </div>
+        </div>
+      </div>
+    } @empty {
+      <div style="color:var(--gc-text-muted)">No modules on file yet.</div>
+    }
+  </div>
+
+  @if (selectedModuleGid()) {
+    <div style="display:flex;align-items:baseline;gap:10px;padding:18px 18px 0">
+      <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em">{{ moduleName(selectedModuleGid()) }} — access</h3>
+      <span style="flex:1;height:1px;background:var(--gc-border)"></span>
+      @if (canManageModule(selectedModuleGid())) {
+        <button class="btn primary" (click)="openModuleGrant()">+ Grant access</button>
+      }
+    </div>
+
+    @if (moduleAccessError()) {
+      <div class="hiernote warn" style="margin:10px 18px 0"><span class="i">!</span><span>{{ moduleAccessError() }}</span></div>
+    }
+
+    @if (moduleAccessLoading()) {
+      <div style="padding:16px 18px;color:var(--gc-text-muted)">Loading…</div>
+    } @else {
+      <div class="tablewrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>User</th><th>Role</th><th>Granted by</th><th>Granted</th>@if (canManageModule(selectedModuleGid())) { <th class="actions">Action</th> }</tr></thead>
+          <tbody>
+            @for (r of moduleAccessRows(); track r.user_email) {
+              <tr>
+                <td>{{ r.user_email }}</td>
+                <td><span class="pill" [class]="'role-' + r.access_level">{{ r.access_level }}</span></td>
+                <td class="num">{{ r.is_system_manager ? '— (system manager)' : (r.granted_by || '—') }}</td>
+                <td class="num">{{ r.granted_date ? (r.granted_date | slice:0:10) : '—' }}</td>
+                @if (canManageModule(selectedModuleGid())) {
+                  <td class="actions"><button class="btn" [disabled]="moduleRevoking() === r.user_email" (click)="revokeModuleAccess(r)">{{ moduleRevoking() === r.user_email ? 'Revoking…' : 'Revoke' }}</button></td>
+                }
+              </tr>
+            } @empty {
+              <tr><td colspan="5" style="color:var(--gc-text-muted)">No explicit grants on this module yet.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+}
+
+<!-- Grant module access -->
+@if (showModuleGrantModal()) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="Grant module access">
+    <div class="modal" style="width:440px">
+      <div class="m-h">
+        <h3>Grant access</h3><span class="no">{{ moduleName(selectedModuleGid()) }}</span>
+        <button class="x" (click)="closeModuleGrant()" aria-label="Close">✕</button>
+      </div>
+      <div class="m-sec">
+        @if (moduleGrantError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ moduleGrantError() }}</span></div> }
+        <div class="field">
+          <label>User email</label>
+          <input class="inp" [ngModel]="moduleGrantEmail()" (ngModelChange)="moduleGrantEmail.set($event)" placeholder="user@example.com">
+        </div>
+        <div class="field">
+          <label>Role</label>
+          <div class="urgency-toggle">
+            <button type="button" [class.on]="moduleGrantLevel() === 'manager'" (click)="moduleGrantLevel.set('manager')">Manager</button>
+            <button type="button" [class.on]="moduleGrantLevel() === 'contributor'" (click)="moduleGrantLevel.set('contributor')">Contributor</button>
+            <button type="button" [class.on]="moduleGrantLevel() === 'viewer'" (click)="moduleGrantLevel.set('viewer')">Viewer</button>
+          </div>
+        </div>
+        <p style="color:var(--gc-text-muted);font-size:11.5px;margin:8px 0 0">
+          Already has access? Granting again at a new role updates it — no need to revoke first.
+        </p>
+      </div>
+      <div class="m-f">
+        <button class="btn" (click)="closeModuleGrant()">Cancel</button>
+        <button class="btn primary" style="margin-left:auto" [disabled]="moduleGranting()" (click)="submitModuleGrant()">
+          {{ moduleGranting() ? 'Granting…' : 'Grant access' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}

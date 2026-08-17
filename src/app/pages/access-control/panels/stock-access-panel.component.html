@@ -1,0 +1,113 @@
+<div class="hiernote">
+  <span class="i">i</span>
+  <span>Each organisation controls its own warehouses, stockpiles, and bootstock. Access is granted per user at one of four levels: viewer / operator / controller / auditor, scoped to a location, a whole organisation, or the whole client.</span>
+</div>
+
+@if (error()) {
+  <div class="hiernote warn"><span class="i">!</span><span>{{ error() }}</span></div>
+}
+
+@if (loading()) {
+  <div style="padding:24px 18px;color:var(--gc-text-muted)">Loading…</div>
+} @else {
+  <div style="display:flex;align-items:baseline;gap:10px;padding:16px 18px 0">
+    <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em">Organisations</h3>
+    <span style="flex:1;height:1px;background:var(--gc-border)"></span>
+    @if (canAdmin()) {
+      <button class="btn primary" (click)="openGrant()">+ Grant access</button>
+    }
+  </div>
+
+  <div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));padding-top:10px">
+    @for (org of orgs(); track org.org_id) {
+      <div class="lcard">
+        <div class="lcard-h">
+          <div><h3>{{ org.org_id.slice(0, 8) }}…</h3><small>{{ org.count }} location(s)</small></div>
+        </div>
+        @if (canAdmin()) {
+          <button class="btn" style="width:100%" (click)="openGrant(org.org_id)">+ Grant access to this org</button>
+        }
+      </div>
+    } @empty {
+      <div style="color:var(--gc-text-muted)">No locations on file yet.</div>
+    }
+  </div>
+
+  <div class="tablewrap" style="margin-top:14px">
+    <table>
+      <thead><tr><th>User</th><th>Scope</th><th>Location / Org</th><th>Role</th>@if (canAdmin()) { <th class="actions">Action</th> }</tr></thead>
+      <tbody>
+        @for (g of grants(); track g.global_id) {
+          <tr>
+            <td class="num">{{ g.user_id.slice(0, 8) }}…</td>
+            <td class="num">{{ g.scope }}</td>
+            <td>{{ g.scope === 'location' ? locationName(g.location_id) : (g.scope === 'org' ? (g.org_id ? g.org_id.slice(0,8) + '…' : '—') : 'all locations') }}</td>
+            <td><span class="pill" [class]="'role-' + g.role">{{ g.role }}</span></td>
+            @if (canAdmin()) {
+              <td class="actions"><button class="btn" [disabled]="revoking() === g.global_id" (click)="revokeGrant(g)">{{ revoking() === g.global_id ? 'Revoking…' : 'Revoke' }}</button></td>
+            }
+          </tr>
+        } @empty {
+          <tr><td colspan="5" style="color:var(--gc-text-muted)">No grants yet.</td></tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+<!-- Grant location access -->
+@if (showGrantModal()) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="Grant access">
+    <div class="modal" style="width:480px">
+      <div class="m-h">
+        <h3>Grant access</h3>
+        <button class="x" (click)="closeGrant()" aria-label="Close">✕</button>
+      </div>
+      <div class="m-sec">
+        @if (grantError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ grantError() }}</span></div> }
+        <div class="field">
+          <label>User ID</label>
+          <input class="inp" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)" placeholder="user UUID">
+        </div>
+        <div class="field">
+          <label>Role</label>
+          <div class="urgency-toggle">
+            <button type="button" [class.on]="grantRole() === 'viewer'" (click)="grantRole.set('viewer')">Viewer</button>
+            <button type="button" [class.on]="grantRole() === 'operator'" (click)="grantRole.set('operator')">Operator</button>
+            <button type="button" [class.on]="grantRole() === 'controller'" (click)="grantRole.set('controller')">Controller</button>
+            <button type="button" [class.on]="grantRole() === 'auditor'" (click)="grantRole.set('auditor')">Auditor</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Scope</label>
+          <div class="urgency-toggle">
+            <button type="button" [class.on]="grantScope() === 'location'" (click)="grantScope.set('location')">Location</button>
+            <button type="button" [class.on]="grantScope() === 'org'" (click)="grantScope.set('org')">Organisation</button>
+            <button type="button" [class.on]="grantScope() === 'client'" (click)="grantScope.set('client')">Whole client</button>
+          </div>
+        </div>
+        @if (grantScope() === 'location') {
+          <div class="field">
+            <label>Location</label>
+            <select class="sel" [ngModel]="grantLocationId()" (ngModelChange)="grantLocationId.set($event)">
+              <option value="">— select —</option>
+              @for (loc of locations(); track loc.global_id) { <option [value]="loc.global_id">{{ loc.name }}</option> }
+            </select>
+          </div>
+        }
+        @if (grantScope() === 'org') {
+          <div class="field">
+            <label>Organisation ID</label>
+            <input class="inp" [ngModel]="grantOrgId()" (ngModelChange)="grantOrgId.set($event)" placeholder="org UUID">
+          </div>
+        }
+      </div>
+      <div class="m-f">
+        <button class="btn" (click)="closeGrant()">Cancel</button>
+        <button class="btn primary" style="margin-left:auto" [disabled]="granting()" (click)="submitGrant()">
+          {{ granting() ? 'Granting…' : 'Grant access' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
