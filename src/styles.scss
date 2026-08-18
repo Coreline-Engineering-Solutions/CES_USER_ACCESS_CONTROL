@@ -146,10 +146,41 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .chip.on { border-color: rgba(37, 99, 235, 0.5); color: var(--gc-primary-light); background: rgba(37, 99, 235, 0.12); }
 
 .board { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 14px 18px; overflow: auto; min-height: 0; }
+.col { display: flex; flex-direction: column; min-height: 0; }
 .col h4 {
   font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gc-text-muted);
-  font-weight: 600; display: flex; gap: 7px; align-items: center; margin-bottom: 10px;
+  font-weight: 600; display: flex; gap: 7px; align-items: center; margin-bottom: 10px; flex: 0 0 auto;
 }
+/* A column with hundreds of rows scrolls internally instead of stretching
+   the whole page — the toolbar/columns above stay in view while you scroll
+   one queue. */
+.col-scroll { overflow-y: auto; min-height: 0; max-height: 62vh; padding-right: 2px; }
+
+/* Search + filter row, shared across any board/table screen that needs it
+   (Registers, Requests, Transfers, ...). */
+.filterbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--gc-border);
+  flex-wrap: wrap;
+}
+.fgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 170px;
+
+  label {
+    font-size: 11px;
+    color: var(--gc-text-muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+}
+.fgroup.grow { flex: 1; min-width: 220px; }
+.result-count { font-size: 11.5px; color: var(--gc-text-muted); padding: 0 18px; margin-top: -2px; margin-bottom: 8px; }
 .col h4 .n { color: var(--gc-neutral); font-variant-numeric: tabular-nums; }
 .tcard { background: var(--gc-surface-1); border: 1px solid var(--gc-border); border-radius: 10px; padding: 11px 13px; margin-bottom: 10px; }
 .tcard:hover { border-color: rgba(37, 99, 235, 0.35); }
@@ -173,6 +204,7 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .trow .route { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trow .route span { color: var(--gc-neutral); }
 .trow .pill { flex: 0 0 auto; }
+.colempty { color: var(--gc-neutral); font-size: 12px; margin: 0; }
 
 /* Tables sit on their own surface rather than floating on the page glow —
    body text over a gradient was the main thing making them hard to read. */
