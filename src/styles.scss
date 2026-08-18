@@ -286,6 +286,51 @@ td.actions .btn + .btn { margin-left: 6px; }
 .field label { display: block; font-size: 11px; color: var(--gc-text-muted); margin-bottom: 5px; letter-spacing: 0.04em; text-transform: uppercase; }
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1; }
+
+/* Lightweight hover tooltip — [data-tip] on any element shows a small
+   styled callout on hover/focus instead of the plain browser tooltip a
+   `title` attribute gives. Used for required-field markers and general
+   "what does this do" hints throughout the console family. CSS-only, no
+   smart repositioning — anchors above the element, which is fine for the
+   form/button contexts this is used in. */
+[data-tip] { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(2px);
+  background: var(--gc-surface-2);
+  color: var(--gc-text);
+  border: 1px solid var(--gc-border);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: normal;
+  width: max-content;
+  max-width: 220px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 50;
+}
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Required-field marker — an asterisk next to a label, itself carrying
+   the hover explanation via [data-tip]. Optional fields stay unmarked;
+   required is the thing worth calling out, not the reverse. */
+.req {
+  color: var(--gc-error);
+  margin-left: 3px;
+  cursor: help;
+  font-weight: 700;
+}
 .inp {
   background: var(--gc-bg); border: 1px solid var(--gc-border); border-radius: 8px; color: var(--gc-text);
   font-variant-numeric: tabular-nums; font-size: 12px; padding: 8px 10px; width: 100%;
