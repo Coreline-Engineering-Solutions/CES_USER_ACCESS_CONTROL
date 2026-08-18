@@ -1,0 +1,109 @@
+<div class="hiernote">
+  <span class="i">i</span>
+  <span>GIS project access is binary — a user either has a project or doesn't, no viewer/manager tiers. Look a person up by email to see and edit what they're in. Only GIS System Managers can make changes here — the same gate CES_NG_GIS itself uses.</span>
+</div>
+
+@if (error()) {
+  <div class="hiernote warn"><span class="i">!</span><span>{{ error() }}</span></div>
+}
+
+@if (loading()) {
+  <div style="padding:24px 18px;color:var(--gc-text-muted)">Loading…</div>
+} @else {
+  <div style="padding:16px 18px 0">
+    <div class="field-row" style="max-width:520px;align-items:flex-end">
+      <div class="field">
+        <label>User email</label>
+        <input class="inp" [ngModel]="lookupEmail()" (ngModelChange)="lookupEmail.set($event)"
+               (keydown.enter)="lookupUser()" placeholder="user@example.com">
+      </div>
+      <button class="btn primary" [disabled]="!lookupEmail().trim() || userProjectsLoading()" (click)="lookupUser()">
+        {{ userProjectsLoading() ? 'Looking up…' : 'Look up' }}
+      </button>
+      @if (activeEmail()) {
+        <button class="btn" (click)="clearUser()">Clear</button>
+      }
+    </div>
+  </div>
+
+  @if (activeEmail()) {
+    <div style="display:flex;align-items:baseline;gap:10px;padding:18px 18px 0">
+      <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em">{{ activeEmail() }} — projects</h3>
+      <span style="flex:1;height:1px;background:var(--gc-border)"></span>
+      @if (canManage()) {
+        <button class="btn primary" (click)="openAssignModal()">+ Add project</button>
+      }
+    </div>
+
+    @if (userProjectsError()) {
+      <div class="hiernote warn" style="margin:10px 18px 0"><span class="i">!</span><span>{{ userProjectsError() }}</span></div>
+    }
+
+    @if (userProjectsLoading()) {
+      <div style="padding:16px 18px;color:var(--gc-text-muted)">Loading…</div>
+    } @else {
+      <div class="tablewrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>Project</th><th>Description</th>@if (canManage()) { <th class="actions">Action</th> }</tr></thead>
+          <tbody>
+            @for (p of userProjects(); track p.project_id) {
+              <tr>
+                <td>{{ p.name }}</td>
+                <td class="num">{{ p.description || '—' }}</td>
+                @if (canManage()) {
+                  <td class="actions"><button class="btn" [disabled]="removing() === p.name" (click)="removeProject(p)">{{ removing() === p.name ? 'Removing…' : 'Remove' }}</button></td>
+                }
+              </tr>
+            } @empty {
+              <tr><td colspan="3" style="color:var(--gc-text-muted)">No projects assigned.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  } @else {
+    <div style="padding:24px 18px;color:var(--gc-text-muted)">Look up a user by email to see their projects.</div>
+  }
+}
+
+<!-- Add project(s) -->
+@if (showAssignModal()) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="Add project">
+    <div class="modal" style="width:480px">
+      <div class="m-h">
+        <h3>Add project</h3><span class="no">{{ activeEmail() }}</span>
+        <button class="x" (click)="closeAssignModal()" aria-label="Close">✕</button>
+      </div>
+      <div class="m-sec">
+        @if (assignError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ assignError() }}</span></div> }
+        <div class="field">
+          <label>Filter</label>
+          <input class="inp" [ngModel]="assignFilter()" (ngModelChange)="assignFilter.set($event)" placeholder="Filter projects…">
+        </div>
+        <div class="tablewrap" style="margin-top:10px;max-height:280px;overflow-y:auto">
+          <table>
+            <tbody>
+              @for (p of filteredAssignable(); track p.project_id) {
+                <tr style="cursor:pointer" (click)="toggleAssignSelection(p.name)">
+                  <td style="width:24px">
+                    <input type="checkbox" [checked]="assignSelection().has(p.name)" (click)="$event.stopPropagation(); toggleAssignSelection(p.name)">
+                  </td>
+                  <td>{{ p.name }}</td>
+                  <td class="num">{{ p.description || '—' }}</td>
+                </tr>
+              } @empty {
+                <tr><td colspan="3" style="color:var(--gc-text-muted)">No projects left to add — this user already has everything, or nothing matches the filter.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="m-f">
+        <button class="btn" (click)="closeAssignModal()">Cancel</button>
+        <button class="btn primary" style="margin-left:auto" [disabled]="assigning() || assignSelection().size === 0" (click)="confirmAssign()">
+          {{ assigning() ? 'Adding…' : 'Add ' + (assignSelection().size || '') + (assignSelection().size === 1 ? ' project' : ' projects') }}
+        </button>
+      </div>
+    </div>
+  </div>
+}

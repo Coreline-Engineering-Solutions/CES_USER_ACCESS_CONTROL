@@ -1,6 +1,7 @@
 import { Type } from '@angular/core';
 import { StockAccessPanelComponent } from './panels/stock-access-panel.component';
 import { ModulesAccessPanelComponent } from './panels/modules-access-panel.component';
+import { GisAccessPanelComponent } from './panels/gis-access-panel.component';
 
 /**
  * One entry per project/tool this client can grant access to. This is the
@@ -37,5 +38,11 @@ export const PROJECT_REGISTRY: AccessProject[] = [
     label: 'Modules',
     hint: 'Per-module manager / contributor / viewer access.',
     component: ModulesAccessPanelComponent,
+  },
+  {
+    id: 'gis',
+    label: 'GIS Projects',
+    hint: 'Binary project membership. Gated by GIS System Manager only.',
+    component: GisAccessPanelComponent,
   },
 ];
