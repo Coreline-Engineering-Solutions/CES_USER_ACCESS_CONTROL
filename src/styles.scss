@@ -331,6 +331,23 @@ td.actions .btn + .btn { margin-left: 6px; }
   cursor: help;
   font-weight: 700;
 }
+
+/* A small hoverable info circle — sits next to a heading to carry the
+   explanation that used to be a permanent info banner. */
+.info-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--gc-accent);
+  color: var(--gc-accent);
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 700;
+  cursor: help;
+  flex: 0 0 16px;
+}
 .inp {
   background: var(--gc-bg); border: 1px solid var(--gc-border); border-radius: 8px; color: var(--gc-text);
   font-variant-numeric: tabular-nums; font-size: 12px; padding: 8px 10px; width: 100%;
