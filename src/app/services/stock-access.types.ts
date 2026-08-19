@@ -35,3 +35,9 @@ export interface LocationAccessGrantPayload {
   location_id?: string | null;
   org_id?: string | null;
 }
+
+/** A real, pickable user — from GIS API `/admin/db-users`, never typed by hand. */
+export interface StockUserRef {
+  user_gid: string;
+  email: string;
+}

@@ -61,4 +61,16 @@ export class StockAccessApiService {
       org_id: filters?.org_id ?? null,
     });
   }
+
+  /**
+   * Real user directory for a database (GIS API `/admin/db-users`) — the
+   * same endpoint and shape CES_STOCK_MANAGER's ReferenceDataService uses
+   * for its email pickers. `org_id` in this schema is currently a client
+   * database gid (see the flagged organisation-identity gap), so this
+   * doubles as "users who can be granted access under this org" until a
+   * real org directory exists.
+   */
+  dbUsersList(db_gid: string) {
+    return this.post<any>('/admin/db-users', { db_gid });
+  }
 }

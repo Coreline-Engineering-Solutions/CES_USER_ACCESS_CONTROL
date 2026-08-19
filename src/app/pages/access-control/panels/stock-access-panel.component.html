@@ -22,7 +22,7 @@
     @for (org of orgs(); track org.org_id) {
       <div class="lcard">
         <div class="lcard-h">
-          <div><h3>{{ org.org_id.slice(0, 8) }}…</h3><small>{{ org.count }} location(s)</small></div>
+          <div><h3>{{ orgName(org.org_id) }}</h3><small>{{ org.count }} location(s)</small></div>
         </div>
         @if (canAdmin()) {
           <button class="btn" style="width:100%" (click)="openGrant(org.org_id)">+ Grant access to this org</button>
@@ -39,9 +39,9 @@
       <tbody>
         @for (g of grants(); track g.global_id) {
           <tr>
-            <td class="num">{{ g.user_id.slice(0, 8) }}…</td>
+            <td [attr.title]="g.user_id">{{ userEmail(g.user_id) }}</td>
             <td class="num">{{ g.scope }}</td>
-            <td>{{ g.scope === 'location' ? locationName(g.location_id) : (g.scope === 'org' ? (g.org_id ? g.org_id.slice(0,8) + '…' : '—') : 'all locations') }}</td>
+            <td>{{ g.scope === 'location' ? locationName(g.location_id) : (g.scope === 'org' ? orgName(g.org_id) : 'all locations') }}</td>
             <td><span class="pill" [class]="'role-' + g.role">{{ g.role }}</span></td>
             @if (canAdmin()) {
               <td class="actions"><button class="btn" [disabled]="revoking() === g.global_id" (click)="revokeGrant(g)">{{ revoking() === g.global_id ? 'Revoking…' : 'Revoke' }}</button></td>
@@ -66,8 +66,20 @@
       <div class="m-sec">
         @if (grantError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ grantError() }}</span></div> }
         <div class="field">
-          <label>User ID</label>
-          <input class="inp" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)" placeholder="user UUID">
+          <label>User</label>
+          @if (usersLoading()) {
+            <div class="inp" style="color:var(--gc-text-muted)">Loading users…</div>
+          } @else if (users().length > 0) {
+            <select class="sel" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)">
+              <option value="">— select —</option>
+              @for (u of users(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
+            </select>
+          } @else {
+            <div class="hiernote warn" style="margin:0">
+              <span class="i">!</span>
+              <span>No users found for the organisations on file — grant one of them access to a location or org first, or check the user is registered.</span>
+            </div>
+          }
         </div>
         <div class="field">
           <label>Role</label>
@@ -97,8 +109,11 @@
         }
         @if (grantScope() === 'org') {
           <div class="field">
-            <label>Organisation ID</label>
-            <input class="inp" [ngModel]="grantOrgId()" (ngModelChange)="grantOrgId.set($event)" placeholder="org UUID">
+            <label>Organisation</label>
+            <select class="sel" [ngModel]="grantOrgId()" (ngModelChange)="grantOrgId.set($event)">
+              <option value="">— select —</option>
+              @for (org of orgs(); track org.org_id) { <option [value]="org.org_id">{{ orgName(org.org_id) }}</option> }
+            </select>
           </div>
         }
       </div>

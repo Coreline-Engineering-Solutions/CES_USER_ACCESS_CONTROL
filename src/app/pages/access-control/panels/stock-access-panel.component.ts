@@ -2,7 +2,21 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { StockAccessApiService } from '../../../services/stock-access-api.service';
 import { SessionService } from '../../../session/session.service';
-import { AccessRole, AccessScope, LocationAccessGrant, StockLocation } from '../../../services/stock-access.types';
+import { AccessRole, AccessScope, LocationAccessGrant, StockLocation, StockUserRef } from '../../../services/stock-access.types';
+
+/**
+ * Cosmetic-only label override for `org_id` — matches CES_STOCK_MANAGER's
+ * ReferenceDataService.orgName() exactly (same org_ids, same labels), so an
+ * admin sees the same name here as the stock team sees in their own app.
+ * `org_id` today is actually a client database gid, not a real subcontractor
+ * org — see the flagged organisation-identity gap in the activity tracker.
+ * Never falls back to a real database/client name; unmapped org_ids get a
+ * generic "Demo Org …" label instead.
+ */
+const ORG_LABEL_OVERRIDES: Record<string, string> = {
+  '00000000-0000-0000-0000-000000000000': 'Demo Test Org',
+  '20ad40a4-9134-4bd6-8451-d840e695015d': 'Acme Demo Contractors',
+};
 
 /**
  * Self-contained access panel for Stock Manager — one entry in
@@ -25,6 +39,8 @@ export class StockAccessPanelComponent implements OnInit {
 
   readonly locations = signal<StockLocation[]>([]);
   readonly grants = signal<LocationAccessGrant[]>([]);
+  readonly users = signal<StockUserRef[]>([]);
+  readonly usersLoading = signal(false);
 
   readonly orgs = computed(() => {
     const map = new Map<string, { org_id: string; count: number; types: Set<string> }>();
@@ -63,6 +79,7 @@ export class StockAccessPanelComponent implements OnInit {
       ]);
       this.locations.set(locRes?.locations ?? []);
       this.grants.set(grantRes?.access ?? []);
+      void this.loadUsers();
     } catch (err: any) {
       console.error('[StockAccessPanel] load failed:', err);
       this.error.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to load stock access data');
@@ -71,9 +88,55 @@ export class StockAccessPanelComponent implements OnInit {
     }
   }
 
+  /**
+   * Real, pickable users — one `/admin/db-users` call per org_id currently
+   * in use (org_id == client database gid today), merged and de-duped, so
+   * the grant form offers an actual "who is this" list instead of asking
+   * an admin to type a UUID by hand. Best-effort per org: one failing org
+   * doesn't block the others.
+   */
+  private async loadUsers(): Promise<void> {
+    const orgIds = this.orgs().map((o) => o.org_id).filter(Boolean);
+    if (orgIds.length === 0) return;
+    this.usersLoading.set(true);
+    try {
+      const lists = await Promise.all(
+        orgIds.map((gid) =>
+          this.stockAccess.dbUsersList(gid).catch((err) => {
+            console.warn('[StockAccessPanel] users lookup failed for org', gid, err);
+            return null;
+          }),
+        ),
+      );
+      const byGid = new Map<string, StockUserRef>();
+      for (const res of lists) {
+        const list = res?.users ?? res?.emails ?? res?.email_list ?? res?.user_list ?? res?.data ?? res;
+        if (!Array.isArray(list)) continue;
+        for (const u of list) {
+          const user_gid = String(typeof u === 'string' ? '' : (u?.user_gid ?? u?.gid ?? '')).trim();
+          const email = String(typeof u === 'string' ? u : (u?.email ?? u?.user_email ?? '')).trim();
+          if (email && user_gid) byGid.set(user_gid, { user_gid, email });
+        }
+      }
+      this.users.set(Array.from(byGid.values()).sort((a, b) => a.email.localeCompare(b.email)));
+    } finally {
+      this.usersLoading.set(false);
+    }
+  }
+
   locationName(id: string | null): string {
     if (!id) return '—';
     return this.locations().find((l) => l.global_id === id)?.name ?? id.slice(0, 8);
+  }
+
+  userEmail(user_id: string | null | undefined): string {
+    if (!user_id) return '—';
+    return this.users().find((u) => u.user_gid === user_id)?.email ?? user_id.slice(0, 8) + '…';
+  }
+
+  orgName(org_id: string | null | undefined): string {
+    if (!org_id) return '—';
+    return ORG_LABEL_OVERRIDES[org_id] ?? `Demo Org ${org_id.slice(0, 6)}`;
   }
 
   openGrant(orgId?: string): void {
@@ -93,7 +156,7 @@ export class StockAccessPanelComponent implements OnInit {
   async submitGrant(): Promise<void> {
     const userId = this.grantUserId().trim();
     if (!userId) {
-      this.grantError.set('User ID is required.');
+      this.grantError.set('Select a user.');
       return;
     }
     if (this.grantScope() === 'location' && !this.grantLocationId()) {
@@ -101,7 +164,7 @@ export class StockAccessPanelComponent implements OnInit {
       return;
     }
     if (this.grantScope() === 'org' && !this.grantOrgId().trim()) {
-      this.grantError.set('Organisation ID is required.');
+      this.grantError.set('Select an organisation.');
       return;
     }
 
