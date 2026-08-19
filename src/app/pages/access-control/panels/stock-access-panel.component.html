@@ -10,45 +10,113 @@
 @if (loading()) {
   <div style="padding:24px 18px;color:var(--gc-text-muted)">Loading…</div>
 } @else {
-  <div style="display:flex;align-items:baseline;gap:10px;padding:16px 18px 0">
-    <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em">Organisations</h3>
-    <span style="flex:1;height:1px;background:var(--gc-border)"></span>
+  <!-- ── Organisations strip ─────────────────────────────────────────── -->
+  <div class="section-h">
+    <h3>Organisations <span class="count">{{ orgs().length }}</span></h3>
+    <span class="section-line"></span>
     @if (canAdmin()) {
-      <button class="btn primary" (click)="openGrant()">+ Grant access</button>
+      <button class="btn primary" title="Grant a user access to a specific location, a whole org, or the whole client." (click)="openGrant()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Grant access
+      </button>
     }
   </div>
 
-  <div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));padding-top:10px">
+  <div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr));padding-top:10px">
     @for (org of orgs(); track org.org_id) {
-      <div class="lcard">
+      <div class="lcard" [class.active]="grantOrgFilter() === org.org_id">
         <div class="lcard-h">
-          <div><h3>{{ orgName(org.org_id) }}</h3><small>{{ org.count }} location(s)</small></div>
+          <div>
+            <h3>{{ orgName(org.org_id) }}</h3>
+            <small>{{ org.count }} location{{ org.count === 1 ? '' : 's' }}</small>
+          </div>
         </div>
-        @if (canAdmin()) {
-          <button class="btn" style="width:100%" (click)="openGrant(org.org_id)">+ Grant access to this org</button>
-        }
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="btn" style="flex:1"
+                  title="Filter the grants table below to only this organisation."
+                  (click)="grantOrgFilter.set(grantOrgFilter() === org.org_id ? '' : org.org_id)">
+            {{ grantOrgFilter() === org.org_id ? 'Showing' : 'Filter' }}
+          </button>
+          @if (canAdmin()) {
+            <button class="btn primary" style="flex:2" title="Grant a user access at this organisation's scope." (click)="openGrant(org.org_id)">+ Grant</button>
+          }
+        </div>
       </div>
     } @empty {
       <div style="color:var(--gc-text-muted)">No locations on file yet.</div>
     }
   </div>
 
-  <div class="tablewrap" style="margin-top:14px">
+  <!-- ── Grants table with filters ────────────────────────────────────── -->
+  <div class="section-h" style="margin-top:18px">
+    <h3>Grants <span class="count">{{ filteredGrants().length }} / {{ grants().length }}</span></h3>
+    <span class="section-line"></span>
+  </div>
+
+  <div class="filterbar">
+    <div class="fgroup grow">
+      <label>Search</label>
+      <input class="inp" [ngModel]="grantSearch()" (ngModelChange)="grantSearch.set($event)" placeholder="Email, location, organisation…">
+    </div>
+    <div class="fgroup">
+      <label>Organisation</label>
+      <select class="sel" [ngModel]="grantOrgFilter()" (ngModelChange)="grantOrgFilter.set($event)">
+        <option value="">All orgs</option>
+        @for (org of orgs(); track org.org_id) { <option [value]="org.org_id">{{ orgName(org.org_id) }}</option> }
+      </select>
+    </div>
+    <div class="fgroup">
+      <label>Scope</label>
+      <select class="sel" [ngModel]="grantScopeFilter()" (ngModelChange)="grantScopeFilter.set($event)">
+        <option value="">Any scope</option>
+        <option value="location">Location</option>
+        <option value="org">Organisation</option>
+        <option value="client">Whole client</option>
+      </select>
+    </div>
+    <div class="fgroup">
+      <label>Role</label>
+      <select class="sel" [ngModel]="grantRoleFilter()" (ngModelChange)="grantRoleFilter.set($event)">
+        <option value="">Any role</option>
+        <option value="viewer">Viewer</option>
+        <option value="operator">Operator</option>
+        <option value="controller">Controller</option>
+        <option value="auditor">Auditor</option>
+        <option value="custodian">Custodian</option>
+        <option value="receiver">Receiver</option>
+      </select>
+    </div>
+    @if (hasActiveFilters()) {
+      <button class="btn" style="align-self:flex-end" (click)="clearFilters()">Clear filters</button>
+    }
+  </div>
+
+  <div class="tablewrap" style="margin-top:8px">
     <table>
-      <thead><tr><th>User</th><th>Scope</th><th>Location / Org</th><th>Role</th>@if (canAdmin()) { <th class="actions">Action</th> }</tr></thead>
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Scope</th>
+          <th>Location / Org</th>
+          <th>Role</th>
+          @if (canAdmin()) { <th class="actions">Action</th> }
+        </tr>
+      </thead>
       <tbody>
-        @for (g of grants(); track g.global_id) {
+        @for (g of filteredGrants(); track g.global_id) {
           <tr>
             <td [attr.title]="g.user_id">{{ userEmail(g.user_id) }}</td>
-            <td class="num">{{ g.scope }}</td>
+            <td>{{ g.scope }}</td>
             <td>{{ g.scope === 'location' ? locationName(g.location_id) : (g.scope === 'org' ? orgName(g.org_id) : 'all locations') }}</td>
             <td><span class="pill" [class]="'role-' + g.role">{{ g.role }}</span></td>
             @if (canAdmin()) {
-              <td class="actions"><button class="btn" [disabled]="revoking() === g.global_id" (click)="revokeGrant(g)">{{ revoking() === g.global_id ? 'Revoking…' : 'Revoke' }}</button></td>
+              <td class="actions"><button class="btn" [disabled]="revoking() === g.global_id" title="Remove this grant. The user loses this specific level of access; other grants (elsewhere) are unaffected." (click)="revokeGrant(g)">{{ revoking() === g.global_id ? 'Revoking…' : 'Revoke' }}</button></td>
             }
           </tr>
         } @empty {
-          <tr><td colspan="5" style="color:var(--gc-text-muted)">No grants yet.</td></tr>
+          <tr><td colspan="5" style="color:var(--gc-text-muted)">{{ hasActiveFilters() ? 'No grants match these filters.' : 'No grants yet.' }}</td></tr>
         }
       </tbody>
     </table>
@@ -58,7 +126,7 @@
 <!-- Grant location access -->
 @if (showGrantModal()) {
   <div class="scrim on" role="dialog" aria-modal="true" aria-label="Grant access">
-    <div class="modal" style="width:480px">
+    <div class="modal" style="width:600px">
       <div class="m-h">
         <h3>Grant access</h3>
         <button class="x" (click)="closeGrant()" aria-label="Close">✕</button>

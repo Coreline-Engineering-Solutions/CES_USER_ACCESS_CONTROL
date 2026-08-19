@@ -206,6 +206,32 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .trow .pill { flex: 0 0 auto; }
 .colempty { color: var(--gc-neutral); font-size: 12px; margin: 0; }
 
+/* Section header used across the Stock access panel — matches the "small
+   uppercase title + subtle divider line + trailing action" pattern that
+   sits above every filterable list in the sister apps. */
+.section-h {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 18px 0;
+}
+.section-h h3 {
+  font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--gc-text-muted); font-weight: 600; margin: 0;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.section-h h3 .count {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14); color: var(--gc-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.section-line { flex: 1; height: 1px; background: var(--gc-border); }
+
+/* Toggled-on org card in the Stock access panel — subtle highlight so the
+   currently-filtered org reads as a live selection, not just a click. */
+.lcard.active {
+  border-color: rgba(37, 99, 235, 0.55);
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.08), transparent);
+}
+
 /* Tables sit on their own surface rather than floating on the page glow —
    body text over a gradient was the main thing making them hard to read. */
 .tablewrap {

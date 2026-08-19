@@ -42,6 +42,65 @@ export class StockAccessPanelComponent implements OnInit {
   readonly users = signal<StockUserRef[]>([]);
   readonly usersLoading = signal(false);
 
+  // ─── Filter/sort over the grants table ──────────────────────────────────
+  // With multiple orgs each holding a handful of users at various levels,
+  // scrolling a flat table is the failure mode; the same filter-bar pattern
+  // Stock Manager uses (search + narrowing dropdowns + clear) keeps it
+  // scannable at scale.
+  readonly grantSearch = signal('');
+  readonly grantRoleFilter = signal<AccessRole | ''>('');
+  readonly grantScopeFilter = signal<AccessScope | ''>('');
+  readonly grantOrgFilter = signal<string>('');
+
+  readonly hasActiveFilters = computed(
+    () =>
+      !!this.grantSearch().trim() ||
+      !!this.grantRoleFilter() ||
+      !!this.grantScopeFilter() ||
+      !!this.grantOrgFilter(),
+  );
+
+  clearFilters(): void {
+    this.grantSearch.set('');
+    this.grantRoleFilter.set('');
+    this.grantScopeFilter.set('');
+    this.grantOrgFilter.set('');
+  }
+
+  /** Search over the human-readable resolutions (email/location name/org
+   *  name), not the raw UUIDs — matching how the columns display. */
+  readonly filteredGrants = computed(() => {
+    const q = this.grantSearch().trim().toLowerCase();
+    const role = this.grantRoleFilter();
+    const scope = this.grantScopeFilter();
+    const orgFilter = this.grantOrgFilter();
+    return this.grants().filter((g) => {
+      if (role && g.role !== role) return false;
+      if (scope && g.scope !== scope) return false;
+      if (orgFilter) {
+        // "Belongs to this org" = grant is org-scoped for that org, OR
+        // location-scoped and the location's own org matches.
+        if (g.scope === 'org' && g.org_id !== orgFilter) return false;
+        if (g.scope === 'location') {
+          const loc = this.locations().find((l) => l.global_id === g.location_id);
+          if (!loc || loc.org_id !== orgFilter) return false;
+        }
+        if (g.scope === 'client') return false;
+      }
+      if (q) {
+        const haystack = [
+          this.userEmail(g.user_id),
+          this.locationName(g.location_id),
+          this.orgName(g.org_id),
+          g.role,
+          g.scope,
+        ].join(' ').toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  });
+
   readonly orgs = computed(() => {
     const map = new Map<string, { org_id: string; count: number; types: Set<string> }>();
     for (const l of this.locations()) {
