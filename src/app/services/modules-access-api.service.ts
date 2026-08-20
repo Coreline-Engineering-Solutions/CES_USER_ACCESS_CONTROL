@@ -3,6 +3,7 @@ import axios, { AxiosInstance } from 'axios';
 import { SessionService } from '../session/session.service';
 import { environment } from '../../environments/environment';
 import { ModuleAccessEntry, ModuleAccessLevel, ModuleSummary, UserModuleAccess } from './modules-access.types';
+import { scrubTechnicalIds } from './error-scrub.util';
 
 /**
  * Wraps the `/modules/*` + `/modules/access/*` endpoints this app needs to
@@ -28,6 +29,19 @@ export class ModulesAccessApiService {
       timeout: 30000,
       headers: { 'Content-Type': 'application/json' },
     });
+
+    this.http.interceptors.response.use(
+      (res) => res,
+      (error) => {
+        if (typeof error?.response?.data?.detail === 'string') {
+          error.response.data.detail = scrubTechnicalIds(error.response.data.detail);
+        }
+        if (typeof error?.message === 'string') {
+          error.message = scrubTechnicalIds(error.message);
+        }
+        return Promise.reject(error);
+      },
+    );
   }
 
   private get sessionGid(): string {

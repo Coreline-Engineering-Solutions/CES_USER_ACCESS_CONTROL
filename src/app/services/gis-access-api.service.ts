@@ -3,6 +3,7 @@ import axios, { AxiosInstance } from 'axios';
 import { SessionService } from '../session/session.service';
 import { environment } from '../../environments/environment';
 import { GisProject, GisProjectAssignResult } from './gis-access.types';
+import { scrubTechnicalIds } from './error-scrub.util';
 
 /**
  * Wraps the `/admin/projects/*` + `/admin/user-projects` endpoints —
@@ -35,6 +36,19 @@ export class GisAccessApiService {
       timeout: 30000,
       headers: { 'Content-Type': 'application/json' },
     });
+
+    this.http.interceptors.response.use(
+      (res) => res,
+      (error) => {
+        if (typeof error?.response?.data?.detail === 'string') {
+          error.response.data.detail = scrubTechnicalIds(error.response.data.detail);
+        }
+        if (typeof error?.message === 'string') {
+          error.message = scrubTechnicalIds(error.message);
+        }
+        return Promise.reject(error);
+      },
+    );
   }
 
   private get sessionGid(): string {

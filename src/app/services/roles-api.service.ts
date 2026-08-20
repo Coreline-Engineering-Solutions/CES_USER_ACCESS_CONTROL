@@ -7,6 +7,7 @@ import {
   RolePrivilegeMappingPayload, RoleUpdatePayload, UserRoleAssignPayload,
   UserRoleAssignment,
 } from './roles.types';
+import { scrubTechnicalIds } from './error-scrub.util';
 
 /**
  * Wraps every `/roles/*` endpoint from STOCK_ROLES_API_HANDOVER.md
@@ -26,6 +27,19 @@ export class RolesApiService {
       timeout: 30000,
       headers: { 'Content-Type': 'application/json' },
     });
+
+    this.http.interceptors.response.use(
+      (res) => res,
+      (error) => {
+        if (typeof error?.response?.data?.detail === 'string') {
+          error.response.data.detail = scrubTechnicalIds(error.response.data.detail);
+        }
+        if (typeof error?.message === 'string') {
+          error.message = scrubTechnicalIds(error.message);
+        }
+        return Promise.reject(error);
+      },
+    );
   }
 
   private get sessionGid(): string {
