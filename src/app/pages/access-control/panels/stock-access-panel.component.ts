@@ -4,6 +4,13 @@ import { StockAccessApiService } from '../../../services/stock-access-api.servic
 import { SessionService } from '../../../session/session.service';
 import { AccessRole, AccessScope, LocationAccessGrant, StockLocation, StockUserRef } from '../../../services/stock-access.types';
 
+/** One user, plus every grant they currently hold in this project. */
+interface UserGrantGroup {
+  user_id: string;
+  email: string;
+  grants: LocationAccessGrant[];
+}
+
 /**
  * Cosmetic-only label override for `org_id` — matches CES_STOCK_MANAGER's
  * ReferenceDataService.orgName() exactly (same org_ids, same labels), so an
@@ -100,6 +107,89 @@ export class StockAccessPanelComponent implements OnInit {
       return true;
     });
   });
+
+  /**
+   * One entry per user, holding all of their grants — so an admin sees "this
+   * person's whole footprint on Stock" in one row and clicks to expand, rather
+   * than scrolling a flat table trying to reassemble it in their head. Built
+   * from `filteredGrants()` so the existing filter bar keeps working (only
+   * users with at least one matching grant show up).
+   *
+   * Unknown-user grants (user_id present but not in the loaded users list —
+   * happens if the user is in a different org's directory) still get grouped
+   * under their user_id; we show a truncated id badge instead of an email.
+   */
+  readonly groupedByUser = computed<UserGrantGroup[]>(() => {
+    const grants = this.filteredGrants();
+    const usersByGid = new Map(this.users().map((u) => [u.user_gid, u]));
+    const groups = new Map<string, UserGrantGroup>();
+    for (const g of grants) {
+      const uid = String(g.user_id ?? '').trim() || '__unknown__';
+      let group = groups.get(uid);
+      if (!group) {
+        const known = usersByGid.get(uid);
+        group = {
+          user_id: uid,
+          email: known?.email ?? '',
+          grants: [],
+        };
+        groups.set(uid, group);
+      }
+      group.grants.push(g);
+    }
+    // Sort users by email (empty emails last, then id-only rows), then each
+    // user's grants by role then scope so the expanded rows are predictable.
+    const list = Array.from(groups.values()).sort((a, b) => {
+      if (!a.email && b.email) return 1;
+      if (a.email && !b.email) return -1;
+      return (a.email || a.user_id).localeCompare(b.email || b.user_id);
+    });
+    for (const grp of list) {
+      grp.grants.sort((a, b) => (a.role + a.scope).localeCompare(b.role + b.scope));
+    }
+    return list;
+  });
+
+  /** Which user cards are currently expanded. */
+  readonly expandedUsers = signal<Set<string>>(new Set());
+
+  toggleUserExpanded(user_id: string): void {
+    this.expandedUsers.update((set) => {
+      const next = new Set(set);
+      if (next.has(user_id)) next.delete(user_id);
+      else next.add(user_id);
+      return next;
+    });
+  }
+
+  isUserExpanded(user_id: string): boolean {
+    return this.expandedUsers().has(user_id);
+  }
+
+  /** Initials shown in the round avatar chip — email letter, or "?" for
+   *  unknown-user rows. */
+  userInitial(group: UserGrantGroup): string {
+    if (group.email) return group.email.charAt(0).toUpperCase();
+    return '?';
+  }
+
+  /** Compact summary of a user's grants — "3 locations · 1 org", "auditor at whole client", etc. */
+  userGrantSummary(group: UserGrantGroup): string {
+    const scopeCounts: Record<AccessScope, number> = { location: 0, org: 0, client: 0 };
+    for (const g of group.grants) scopeCounts[g.scope]++;
+    const parts: string[] = [];
+    if (scopeCounts.location) parts.push(`${scopeCounts.location} location${scopeCounts.location === 1 ? '' : 's'}`);
+    if (scopeCounts.org) parts.push(`${scopeCounts.org} org${scopeCounts.org === 1 ? '' : 's'}`);
+    if (scopeCounts.client) parts.push(`whole client`);
+    return parts.join(' · ') || 'no grants';
+  }
+
+  /** Distinct roles the user holds, for the pill row on the collapsed card. */
+  userRoles(group: UserGrantGroup): AccessRole[] {
+    const seen = new Set<AccessRole>();
+    for (const g of group.grants) seen.add(g.role);
+    return Array.from(seen);
+  }
 
   readonly orgs = computed(() => {
     const map = new Map<string, { org_id: string; count: number; types: Set<string> }>();

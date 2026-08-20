@@ -49,9 +49,14 @@
     }
   </div>
 
-  <!-- ── Grants table with filters ────────────────────────────────────── -->
+  <!-- ── Users & their access (grants grouped by user) ────────────────── -->
+  <!-- One row per user, expanded to reveal every grant they hold across the
+       project. Reads faster than a flat table at scale: "who has access, and
+       to what" answered in a single glance instead of eyeballing repeats. -->
   <div class="section-h" style="margin-top:18px">
-    <h3>Grants <span class="count">{{ filteredGrants().length }} / {{ grants().length }}</span></h3>
+    <h3>Users &amp; their access
+      <span class="count">{{ groupedByUser().length }} user{{ groupedByUser().length === 1 ? '' : 's' }} · {{ filteredGrants().length }} / {{ grants().length }} grants</span>
+    </h3>
     <span class="section-line"></span>
   </div>
 
@@ -93,33 +98,68 @@
     }
   </div>
 
-  <div class="tablewrap" style="margin-top:8px">
-    <table>
-      <thead>
-        <tr>
-          <th>User</th>
-          <th>Scope</th>
-          <th>Location / Org</th>
-          <th>Role</th>
-          @if (canAdmin()) { <th class="actions">Action</th> }
-        </tr>
-      </thead>
-      <tbody>
-        @for (g of filteredGrants(); track g.global_id) {
-          <tr>
-            <td [attr.title]="g.user_id">{{ userEmail(g.user_id) }}</td>
-            <td>{{ g.scope }}</td>
-            <td>{{ g.scope === 'location' ? locationName(g.location_id) : (g.scope === 'org' ? orgName(g.org_id) : 'all locations') }}</td>
-            <td><span class="pill" [class]="'role-' + g.role">{{ g.role }}</span></td>
-            @if (canAdmin()) {
-              <td class="actions"><button class="btn" [disabled]="revoking() === g.global_id" title="Remove this grant. The user loses this specific level of access; other grants (elsewhere) are unaffected." (click)="revokeGrant(g)">{{ revoking() === g.global_id ? 'Revoking…' : 'Revoke' }}</button></td>
+  <div class="ug-list" style="margin-top:8px">
+    @for (grp of groupedByUser(); track grp.user_id) {
+      <div class="ug-row" [class.ug-row--open]="isUserExpanded(grp.user_id)">
+        <button type="button" class="ug-head" (click)="toggleUserExpanded(grp.user_id)"
+                [attr.aria-expanded]="isUserExpanded(grp.user_id)"
+                [title]="isUserExpanded(grp.user_id) ? 'Hide this user\'s grants' : 'Show every grant this user holds'">
+          <span class="ug-avatar" [class.ug-avatar--unknown]="!grp.email">{{ userInitial(grp) }}</span>
+          <div class="ug-who">
+            <span class="ug-email">
+              @if (grp.email) { {{ grp.email }} }
+              @else { <span class="ug-email--placeholder">User {{ grp.user_id.slice(0, 8) }}…</span> }
+            </span>
+            <span class="ug-summary">{{ userGrantSummary(grp) }}</span>
+          </div>
+          <div class="ug-roles">
+            @for (r of userRoles(grp); track r) {
+              <span class="pill" [class]="'role-' + r">{{ r }}</span>
             }
-          </tr>
-        } @empty {
-          <tr><td colspan="5" style="color:var(--gc-text-muted)">{{ hasActiveFilters() ? 'No grants match these filters.' : 'No grants yet.' }}</td></tr>
+          </div>
+          <span class="ug-count">{{ grp.grants.length }}</span>
+          <svg class="ug-chev" [class.rotated]="isUserExpanded(grp.user_id)"
+               width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M9 18l6-6-6-6"/>
+          </svg>
+        </button>
+
+        @if (isUserExpanded(grp.user_id)) {
+          <div class="ug-body">
+            <table class="ug-grants">
+              <thead>
+                <tr>
+                  <th>Scope</th>
+                  <th>Location / Organisation</th>
+                  <th>Role</th>
+                  @if (canAdmin()) { <th class="actions">Action</th> }
+                </tr>
+              </thead>
+              <tbody>
+                @for (g of grp.grants; track g.global_id) {
+                  <tr>
+                    <td>{{ g.scope }}</td>
+                    <td>{{ g.scope === 'location' ? locationName(g.location_id) : (g.scope === 'org' ? orgName(g.org_id) : 'all locations') }}</td>
+                    <td><span class="pill" [class]="'role-' + g.role">{{ g.role }}</span></td>
+                    @if (canAdmin()) {
+                      <td class="actions">
+                        <button class="btn" [disabled]="revoking() === g.global_id"
+                                title="Remove this specific grant. This user's other grants are unaffected."
+                                (click)="revokeGrant(g)">
+                          {{ revoking() === g.global_id ? 'Revoking…' : 'Revoke' }}
+                        </button>
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
         }
-      </tbody>
-    </table>
+      </div>
+    } @empty {
+      <div class="ug-empty">{{ hasActiveFilters() ? 'No grants match these filters.' : 'No grants yet.' }}</div>
+    }
   </div>
 }
 
