@@ -10,25 +10,68 @@
 @if (loading()) {
   <div style="padding:24px 18px;color:var(--gc-text-muted)">Loading…</div>
 } @else {
+  <div class="statstrip">
+    <div class="stat">
+      <div class="v">{{ modules().length }}</div>
+      <div class="l">Modules on file</div>
+    </div>
+    <div class="stat">
+      <div class="v">{{ accessibleCount() }}</div>
+      <div class="l">You have access on</div>
+    </div>
+    <div class="stat">
+      <div class="v">{{ managedCount() }}</div>
+      <div class="l">You can manage</div>
+    </div>
+    @if (selectedModuleGid()) {
+      <div class="stat">
+        <div class="v">{{ moduleAccessRows().length }}</div>
+        <div class="l">Grants on {{ moduleName(selectedModuleGid()) }}</div>
+      </div>
+    }
+  </div>
+
   <div class="section-h">
-    <h3>Modules</h3>
+    <h3>Modules <span class="count">{{ filteredModules().length }} / {{ modules().length }}</span></h3>
     <span class="section-line"></span>
   </div>
 
+  <div class="filterbar">
+    <div class="fgroup grow">
+      <label>Search</label>
+      <input class="inp" [ngModel]="moduleSearch()" (ngModelChange)="moduleSearch.set($event)" placeholder="Module description…">
+    </div>
+    @if (moduleSearch().trim()) {
+      <button class="btn" style="align-self:flex-end" (click)="moduleSearch.set('')">Clear</button>
+    }
+  </div>
+
   <div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr));padding-top:10px">
-    @for (m of modules(); track m.module_gid) {
-      <div class="lcard" [class.on]="selectedModuleGid() === m.module_gid" style="cursor:pointer" (click)="selectModule(m.module_gid)">
+    @for (m of filteredModules(); track m.module_gid) {
+      <div class="lcard" [class.on]="selectedModuleGid() === m.module_gid" style="cursor:pointer"
+           title="View this module's grants"
+           (click)="selectModule(m.module_gid)">
         <div class="lcard-h">
           <div>
             <h3>{{ m.description }}</h3>
             @if (canManageModule(m.module_gid)) {
               <small class="pill ok" style="margin-top:4px;display:inline-block">you manage this</small>
+            } @else {
+              <small style="color:var(--gc-text-muted);font-size:11px">view only</small>
             }
           </div>
         </div>
       </div>
     } @empty {
-      <div style="color:var(--gc-text-muted)">No modules on file yet.</div>
+      @if (moduleSearch().trim()) {
+        <div style="color:var(--gc-text-muted)">No modules match "{{ moduleSearch() }}".</div>
+      } @else if (hasNoOwnAccess()) {
+        <div style="color:var(--gc-text-muted)">
+          No modules are visible to your account. Modules only lists what you have access on — ask an existing manager to grant you access, or a GIS System Manager to bootstrap this list.
+        </div>
+      } @else {
+        <div style="color:var(--gc-text-muted)">No modules on file yet.</div>
+      }
     }
   </div>
 
@@ -69,6 +112,8 @@
         </table>
       </div>
     }
+  } @else if (filteredModules().length > 0) {
+    <div style="padding:16px 18px;color:var(--gc-text-muted);font-size:12.5px">Pick a module above to see and manage its grants.</div>
   }
 }
 

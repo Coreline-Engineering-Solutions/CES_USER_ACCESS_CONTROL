@@ -48,6 +48,35 @@ export class ModulesAccessPanelComponent implements OnInit {
 
   readonly moduleRevoking = signal<string | null>(null);
 
+  // ─── Filter + summary ────────────────────────────────────────────────────
+  readonly moduleSearch = signal('');
+
+  readonly filteredModules = computed<ModuleSummary[]>(() => {
+    const q = this.moduleSearch().trim().toLowerCase();
+    const list = this.modules();
+    if (!q) return list;
+    return list.filter((m) => m.description.toLowerCase().includes(q));
+  });
+
+  /** Modules I manage (via explicit grant or GIS System Manager bypass). */
+  readonly managedCount = computed(() => {
+    if (this.session.isSystemManager()) return this.modules().length;
+    return this.managedModuleGids().size;
+  });
+
+  /** Modules I have any access on. */
+  readonly accessibleCount = computed(() => {
+    if (this.session.isSystemManager()) return this.modules().length;
+    return this.myModuleAccess().length;
+  });
+
+  /** True when the current signed-in user's own module access has loaded and
+   *  they have none — used to explain the empty state instead of leaving it
+   *  ambiguous. */
+  readonly hasNoOwnAccess = computed(
+    () => this.myModuleAccess().length === 0 && !this.session.isSystemManager(),
+  );
+
   ngOnInit(): void {
     void this.load();
   }

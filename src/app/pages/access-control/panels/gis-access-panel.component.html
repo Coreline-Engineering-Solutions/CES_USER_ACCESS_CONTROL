@@ -1,6 +1,6 @@
 <div class="hiernote">
   <span class="i">i</span>
-  <span>GIS project access is binary — a user either has a project or doesn't, no viewer/manager tiers. Look a person up by email to see and edit what they're in. Only GIS System Managers can make changes here — the same gate CES_NG_GIS itself uses.</span>
+  <span>GIS project access is binary — a user either has a project or doesn't, no viewer/manager tiers. Only GIS System Managers can make changes here — the same gate CES_NG_GIS itself uses. The GIS API has no "list users for this project" endpoint, so access reviews are user-centric: look up a person by email to see and edit what they're in.</span>
 </div>
 
 @if (error()) {
@@ -10,7 +10,29 @@
 @if (loading()) {
   <div style="padding:24px 18px;color:var(--gc-text-muted)">Loading…</div>
 } @else {
-  <div style="padding:16px 18px 0">
+  <div class="statstrip">
+    <div class="stat">
+      <div class="v">{{ allProjects().length }}</div>
+      <div class="l">GIS projects on this platform</div>
+    </div>
+    @if (activeEmail()) {
+      <div class="stat">
+        <div class="v">{{ userProjects().length }}</div>
+        <div class="l">{{ activeEmail() }} — assigned</div>
+      </div>
+      <div class="stat">
+        <div class="v">{{ assignableProjects().length }}</div>
+        <div class="l">Available to add</div>
+      </div>
+    }
+  </div>
+
+  <div class="section-h">
+    <h3>Look up a user</h3>
+    <span class="section-line"></span>
+  </div>
+
+  <div style="padding:12px 18px 4px">
     <div class="field-row" style="max-width:520px;align-items:flex-end">
       <div class="field">
         <label>User email</label>
@@ -27,11 +49,11 @@
   </div>
 
   @if (activeEmail()) {
-    <div class="section-h" style="margin-top:18px">
-      <h3>{{ activeEmail() }} — projects</h3>
+    <div class="section-h" style="margin-top:14px">
+      <h3>{{ activeEmail() }} — projects <span class="count">{{ userProjects().length }}</span></h3>
       <span class="section-line"></span>
       @if (canManage()) {
-        <button class="btn primary" (click)="openAssignModal()">+ Add project</button>
+        <button class="btn primary" (click)="openAssignModal()">+ Add projects</button>
       }
     </div>
 
@@ -55,14 +77,58 @@
                 }
               </tr>
             } @empty {
-              <tr><td colspan="3" style="color:var(--gc-text-muted)">No projects assigned.</td></tr>
+              <tr><td colspan="3" style="color:var(--gc-text-muted)">No projects assigned to this user.</td></tr>
             }
           </tbody>
         </table>
       </div>
     }
-  } @else {
-    <div style="padding:24px 18px;color:var(--gc-text-muted)">Look up a user by email to see their projects.</div>
+  }
+
+  <!-- Always-visible project directory below — reads well even before a
+       user is looked up, and gives an admin something to scroll rather than
+       a bare prompt. -->
+  <div class="section-h" style="margin-top:22px">
+    <h3>All GIS projects <span class="count">{{ filteredAllProjects().length }} / {{ allProjects().length }}</span></h3>
+    <span class="section-line"></span>
+  </div>
+
+  <div class="filterbar">
+    <div class="fgroup grow">
+      <label>Search</label>
+      <input class="inp" [ngModel]="projectSearch()" (ngModelChange)="projectSearch.set($event)" placeholder="Project name or description…">
+    </div>
+    @if (projectSearch().trim()) {
+      <button class="btn" style="align-self:flex-end" (click)="projectSearch.set('')">Clear</button>
+    }
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Project</th><th>Description</th></tr></thead>
+      <tbody>
+        @for (p of filteredAllProjects(); track p.project_id) {
+          <tr>
+            <td>{{ p.name }}</td>
+            <td class="num">{{ p.description || '—' }}</td>
+          </tr>
+        } @empty {
+          <tr><td colspan="2" style="color:var(--gc-text-muted)">
+            @if (projectSearch().trim()) {
+              No projects match "{{ projectSearch() }}".
+            } @else {
+              No GIS projects on file yet.
+            }
+          </td></tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  @if (!canManage()) {
+    <p style="color:var(--gc-text-muted);font-size:11.5px;padding:10px 18px 0">
+      Read-only mode — only GIS System Managers can add or remove project access. Ask an existing System Manager if you need to change anything here.
+    </p>
   }
 }
 

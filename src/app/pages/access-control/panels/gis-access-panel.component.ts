@@ -51,6 +51,16 @@ export class GisAccessPanelComponent implements OnInit {
 
   readonly removing = signal<string | null>(null);
 
+  // ─── Project directory (upfront browse) ─────────────────────────────────
+  // Shown before any user lookup, so the panel isn't a blank prompt.
+  readonly projectSearch = signal('');
+  readonly filteredAllProjects = computed<GisProject[]>(() => {
+    const q = this.projectSearch().trim().toLowerCase();
+    const list = this.allProjects();
+    if (!q) return list;
+    return list.filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
+  });
+
   readonly filteredAssignable = computed(() => {
     const q = this.assignFilter().trim().toLowerCase();
     const list = this.assignableProjects();
