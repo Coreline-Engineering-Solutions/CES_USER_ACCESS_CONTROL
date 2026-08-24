@@ -102,7 +102,7 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .hiernote.ok .i { border-color: var(--gc-success); color: var(--gc-success); }
 
 .statstrip { display: flex; gap: 12px; padding: 14px 18px 4px; flex-wrap: wrap; }
-.stat { background: var(--gc-surface-1); border: 1px solid var(--gc-border); border-radius: 10px; padding: 10px 16px; min-width: 130px; }
+.stat { background: var(--gc-surface-1); border: 1px solid var(--gc-border); border-radius: 10px; padding: 10px 16px; min-width: 130px; flex: 1 1 130px; }
 .stat .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .stat .v.warn { color: var(--gc-warning); } .stat .v.err { color: var(--gc-error); } .stat .v.ok { color: var(--gc-success); }
 .stat .l { font-size: 10.5px; color: var(--gc-text-muted); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 2px; }

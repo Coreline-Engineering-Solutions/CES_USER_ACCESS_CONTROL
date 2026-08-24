@@ -81,7 +81,7 @@
           <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Privileges</h3>
           @if (canManageRoles()) {
             <div class="field-row" style="margin-bottom:10px">
-              <div class="field"><input class="inp" [ngModel]="newPrivilegeName()" (ngModelChange)="newPrivilegeName.set($event)" placeholder="_privilege_name"></div>
+              <div class="field"><input class="inp" [ngModel]="newPrivilegeName()" (ngModelChange)="newPrivilegeName.set($event)" placeholder="Privilege name (e.g. _stock_view)"></div>
               <div class="field"><input class="inp" [ngModel]="newPrivilegeUtility()" (ngModelChange)="newPrivilegeUtility.set($event)" placeholder="Utility (default GIS System)"></div>
             </div>
             @if (privilegeError()) { <div class="hiernote warn"><span class="i">!</span><span>{{ privilegeError() }}</span></div> }
