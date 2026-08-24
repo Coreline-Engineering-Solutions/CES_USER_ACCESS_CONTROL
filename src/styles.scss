@@ -210,7 +210,7 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
    uppercase title + subtle divider line + trailing action" pattern that
    sits above every filterable list in the sister apps. */
 .section-h {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 16px 18px 0;
 }
 .section-h h3 {
@@ -223,7 +223,7 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
   background: rgba(148, 163, 184, 0.14); color: var(--gc-text-muted);
   font-variant-numeric: tabular-nums;
 }
-.section-line { flex: 1; height: 1px; background: var(--gc-border); }
+.section-line { flex: 1; min-width: 24px; height: 1px; background: var(--gc-border); }
 
 /* Toggled-on org card in the Stock access panel — subtle highlight so the
    currently-filtered org reads as a live selection, not just a click. */
@@ -310,8 +310,8 @@ td.actions .btn + .btn { margin-left: 6px; }
 
 .field { margin-bottom: 12px; }
 .field label { display: block; font-size: 11px; color: var(--gc-text-muted); margin-bottom: 5px; letter-spacing: 0.04em; text-transform: uppercase; }
-.field-row { display: flex; gap: 10px; }
-.field-row .field { flex: 1; }
+.field-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.field-row .field { flex: 1; min-width: 160px; }
 
 /* Lightweight hover tooltip — [data-tip] on any element shows a small
    styled callout on hover/focus instead of the plain browser tooltip a
