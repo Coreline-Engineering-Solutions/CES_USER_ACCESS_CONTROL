@@ -15,6 +15,7 @@
     <h3>Organisations <span class="count">{{ orgs().length }}</span></h3>
     <span class="section-line"></span>
     @if (canAdmin()) {
+      <button class="btn" title="Register a new organisation (name + client database ID) in the real org directory." (click)="openCreateOrg()">+ Register org</button>
       <button class="btn primary" title="Grant a user access to a specific location, a whole org, or the whole client." (click)="openGrant()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -160,6 +161,35 @@
     } @empty {
       <div class="ug-empty">{{ hasActiveFilters() ? 'No grants match these filters.' : 'No grants yet.' }}</div>
     }
+  </div>
+}
+
+<!-- Register a new organisation -->
+@if (showCreateOrgModal()) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="Register organisation">
+    <div class="modal" style="width:480px">
+      <div class="m-h">
+        <h3>Register organisation</h3>
+        <button class="x" (click)="closeCreateOrg()" aria-label="Close">✕</button>
+      </div>
+      <div class="m-sec">
+        @if (orgCreateError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ orgCreateError() }}</span></div> }
+        <div class="field">
+          <label>Name</label>
+          <input class="inp" [ngModel]="orgDraftName()" (ngModelChange)="orgDraftName.set($event)" placeholder="e.g. Coreline Engineering Solutions">
+        </div>
+        <div class="field">
+          <label>Client database ID</label>
+          <input class="inp" [ngModel]="orgDraftClientDbGid()" (ngModelChange)="orgDraftClientDbGid.set($event)" placeholder="client database UUID — the org_id already in use on locations/grants">
+        </div>
+      </div>
+      <div class="m-f">
+        <button class="btn" (click)="closeCreateOrg()">Cancel</button>
+        <button class="btn primary" style="margin-left:auto" [disabled]="orgCreating()" (click)="submitCreateOrg()">
+          {{ orgCreating() ? 'Registering…' : 'Register' }}
+        </button>
+      </div>
+    </div>
   </div>
 }
 

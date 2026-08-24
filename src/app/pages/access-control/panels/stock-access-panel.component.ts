@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { StockAccessApiService } from '../../../services/stock-access-api.service';
 import { SessionService } from '../../../session/session.service';
-import { AccessRole, AccessScope, LocationAccessGrant, StockLocation, StockUserRef } from '../../../services/stock-access.types';
+import { AccessRole, AccessScope, LocationAccessGrant, OrgRow, StockLocation, StockUserRef } from '../../../services/stock-access.types';
 
 /** One user, plus every grant they currently hold in this project. */
 interface UserGrantGroup {
@@ -12,13 +12,12 @@ interface UserGrantGroup {
 }
 
 /**
- * Cosmetic-only label override for `org_id` — matches CES_STOCK_MANAGER's
- * ReferenceDataService.orgName() exactly (same org_ids, same labels), so an
- * admin sees the same name here as the stock team sees in their own app.
- * `org_id` today is actually a client database gid, not a real subcontractor
- * org — see the flagged organisation-identity gap in the activity tracker.
- * Never falls back to a real database/client name; unmapped org_ids get a
- * generic "Demo Org …" label instead.
+ * Last-resort label for an org_id with no entry in the real org directory
+ * (`/stock/orgs/list`, loaded into `realOrgs` below) yet — e.g. a client
+ * database already in use for locations/grants that nobody's registered
+ * a name for here. `org_id` in this schema is a client_db_gid; the real
+ * directory is what finally gives it a name — see orgName() below, which
+ * checks that first and only falls back to this map.
  */
 const ORG_LABEL_OVERRIDES: Record<string, string> = {
   '00000000-0000-0000-0000-000000000000': 'Demo Test Org',
@@ -202,6 +201,62 @@ export class StockAccessPanelComponent implements OnInit {
     return Array.from(map.values());
   });
 
+  // ─── Organisation directory ──────────────────────────────────────────────
+  // The real thing — /stock/orgs/create + /stock/orgs/list. This app is the
+  // sole admin surface for it (org creation was pulled out of Stock Manager
+  // for exactly this reason). orgName() below reads from this first.
+  readonly realOrgs = signal<OrgRow[]>([]);
+  readonly realOrgsByClientDbGid = computed(() => new Map(this.realOrgs().map((o) => [o.client_db_gid, o])));
+
+  readonly showCreateOrgModal = signal(false);
+  readonly orgDraftName = signal('');
+  readonly orgDraftClientDbGid = signal('');
+  readonly orgCreating = signal(false);
+  readonly orgCreateError = signal<string | null>(null);
+
+  openCreateOrg(): void {
+    this.orgDraftName.set('');
+    this.orgDraftClientDbGid.set('');
+    this.orgCreateError.set(null);
+    this.showCreateOrgModal.set(true);
+  }
+
+  closeCreateOrg(): void {
+    this.showCreateOrgModal.set(false);
+  }
+
+  async submitCreateOrg(): Promise<void> {
+    const name = this.orgDraftName().trim();
+    const clientDbGid = this.orgDraftClientDbGid().trim();
+    if (!name || !clientDbGid) {
+      this.orgCreateError.set('Name and client database ID are both required.');
+      return;
+    }
+    this.orgCreating.set(true);
+    this.orgCreateError.set(null);
+    try {
+      await this.stockAccess.orgCreate({ name, client_db_gid: clientDbGid });
+      this.showCreateOrgModal.set(false);
+      await this.loadRealOrgs();
+    } catch (err: any) {
+      console.error('[StockAccessPanel] org create failed:', err);
+      this.orgCreateError.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to create organisation');
+    } finally {
+      this.orgCreating.set(false);
+    }
+  }
+
+  private async loadRealOrgs(): Promise<void> {
+    try {
+      const result = await this.stockAccess.orgsList();
+      this.realOrgs.set(result?.orgs ?? []);
+    } catch (err: any) {
+      // Non-fatal — orgName() falls back to the generic label map below,
+      // so a permission gap on one database doesn't blank the whole panel.
+      console.warn('[StockAccessPanel] real org directory load failed:', err);
+    }
+  }
+
   readonly showGrantModal = signal(false);
   readonly granting = signal(false);
   readonly grantError = signal<string | null>(null);
@@ -229,6 +284,7 @@ export class StockAccessPanelComponent implements OnInit {
       this.locations.set(locRes?.locations ?? []);
       this.grants.set(grantRes?.access ?? []);
       void this.loadUsers();
+      void this.loadRealOrgs();
     } catch (err: any) {
       console.error('[StockAccessPanel] load failed:', err);
       this.error.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to load stock access data');
@@ -285,6 +341,8 @@ export class StockAccessPanelComponent implements OnInit {
 
   orgName(org_id: string | null | undefined): string {
     if (!org_id) return '—';
+    const real = this.realOrgsByClientDbGid().get(org_id);
+    if (real) return real.name;
     return ORG_LABEL_OVERRIDES[org_id] ?? `Demo Org ${org_id.slice(0, 6)}`;
   }
 

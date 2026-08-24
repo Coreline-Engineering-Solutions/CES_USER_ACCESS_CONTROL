@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import axios, { AxiosInstance } from 'axios';
 import { SessionService } from '../session/session.service';
 import { environment } from '../../environments/environment';
-import { LocationAccessGrant, LocationAccessGrantPayload, StockLocation } from './stock-access.types';
+import { LocationAccessGrant, LocationAccessGrantPayload, OrgCreatePayload, OrgRow, StockLocation } from './stock-access.types';
 import { scrubTechnicalIds } from './error-scrub.util';
 
 /**
@@ -86,5 +86,18 @@ export class StockAccessApiService {
    */
   dbUsersList(db_gid: string) {
     return this.post<any>('/admin/db-users', { db_gid });
+  }
+
+  // ─── Organisations ────────────────────────────────────────────────────────
+  // Confirmed live — the real org directory this app is the sole admin
+  // surface for (org_id used everywhere in this schema is a client_db_gid;
+  // this is what finally gives those ids a real name).
+
+  orgCreate(payload: OrgCreatePayload) {
+    return this.post<{ response: string; org_id?: string; data?: unknown }>('/stock/orgs/create', payload);
+  }
+
+  orgsList() {
+    return this.post<{ response: string; orgs: OrgRow[] }>('/stock/orgs/list', {});
   }
 }

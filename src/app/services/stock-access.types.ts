@@ -41,3 +41,22 @@ export interface StockUserRef {
   user_gid: string;
   email: string;
 }
+
+// ─── Organisations ────────────────────────────────────────────────────────
+// A real org directory (name -> client_db_gid), confirmed live via
+// /stock/orgs/create + /stock/orgs/list. Lives here rather than
+// CES_STOCK_MANAGER because orgs are an access-control primitive — org_id
+// on every location/grant IS a client_db_gid, so this directory is what
+// finally gives those ids a real name instead of the old "Demo Org …"
+// placeholder labels.
+export interface OrgCreatePayload {
+  name: string;
+  client_db_gid: string;
+}
+
+export interface OrgRow {
+  global_id?: string;
+  name: string;
+  client_db_gid: string;
+  [key: string]: unknown;
+}
