@@ -285,7 +285,11 @@ td.actions .btn + .btn { margin-left: 6px; }
 /* modal */
 .scrim {
   position: fixed; inset: 0; background: rgba(4, 11, 26, 0.7); display: none;
-  align-items: center; justify-content: center; z-index: 40;
+  align-items: center; justify-content: center;
+  /* Must beat the sidebar (position: fixed, z-index: 100) and the navbar's
+     account dropdown (z-index: 199-200), or the sidebar paints over the left
+     edge of every centered modal — see CES_STOCK_MANAGER's identical fix. */
+  z-index: 300;
 }
 .scrim.on { display: flex; }
 .modal {

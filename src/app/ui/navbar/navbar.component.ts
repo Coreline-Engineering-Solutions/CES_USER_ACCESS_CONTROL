@@ -1,11 +1,10 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
 import { SessionService } from '../../session/session.service';
 
 @Component({
   selector: 'app-navbar',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive],
+  imports: [],
   templateUrl: './navbar.component.html',
   styleUrl: './navbar.component.scss',
 })

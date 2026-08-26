@@ -1,0 +1,11 @@
+.app-main {
+  min-height: 100vh;
+  transition: padding-left 0.18s ease;
+}
+
+@media (max-width: 720px) {
+  // On mobile the sidebar auto-collapses to 64px (see sidebar.component.scss),
+  // so we hard-clamp the main padding here to match — the LayoutService signal
+  // isn't media-aware.
+  .app-main { padding-left: 64px !important; }
+}

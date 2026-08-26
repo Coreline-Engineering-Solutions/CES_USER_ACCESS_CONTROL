@@ -1,4 +1,9 @@
 @if (session.session()) {
-  <app-navbar />
+  <app-sidebar />
 }
-<router-outlet />
+<div class="app-main" [style.padding-left.px]="mainOffsetPx()">
+  @if (session.session()) {
+    <app-navbar />
+  }
+  <router-outlet />
+</div>

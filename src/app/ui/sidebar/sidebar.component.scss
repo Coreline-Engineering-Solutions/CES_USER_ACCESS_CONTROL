@@ -1,0 +1,166 @@
+// Sidebar mirrors CES_STOCK_MANAGER's (which itself mirrors CES_MODULES')
+// UI language, using this app's own design tokens (--gc-*, identical values
+// since all CES apps share the same token set — see styles.scss header
+// comment). Fixed to the left, height 100vh, main content pads itself by
+// the sidebar's current width (see app.scss).
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 232px;
+  background: var(--gc-surface-1);
+  border-right: 1px solid var(--gc-border);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  transition: width 0.18s ease;
+
+  &.collapsed {
+    width: 64px;
+  }
+}
+
+.sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  min-height: 50px;
+  border-bottom: 1px solid var(--gc-border);
+
+  .sidebar.collapsed & {
+    justify-content: center;
+    padding: 10px 8px;
+  }
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brand-logo {
+  height: 22px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.brand-name {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--gc-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collapse-toggle {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--gc-border);
+  background: var(--gc-surface-2);
+  color: var(--gc-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+
+  &:hover {
+    color: var(--gc-text);
+    border-color: rgba(37, 99, 235, 0.4);
+    background: rgba(37, 99, 235, 0.1);
+  }
+}
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 8px 16px;
+
+  scrollbar-width: thin;
+  scrollbar-color: var(--gc-border) transparent;
+
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-thumb { background: var(--gc-border); border-radius: 3px; }
+}
+
+.nav-group-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gc-text-muted);
+  padding: 10px 10px 6px;
+  margin: 0;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--gc-text-muted);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.12s;
+
+  &:hover {
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--gc-text);
+  }
+
+  &.active {
+    background: rgba(37, 99, 235, 0.16);
+    border-color: rgba(37, 99, 235, 0.32);
+    color: var(--gc-text);
+  }
+
+  .sidebar.collapsed & {
+    justify-content: center;
+    padding: 8px;
+  }
+}
+
+.nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+.nav-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Narrow viewports — sidebar collapses automatically on mobile.
+@media (max-width: 720px) {
+  .sidebar { width: 64px; }
+  .sidebar .brand-name,
+  .sidebar .nav-label { display: none; }
+  .sidebar .nav-item { justify-content: center; padding: 8px; }
+}

@@ -1,11 +1,6 @@
 <nav class="navbar">
   <div class="brand">
-    <img src="/assets/CESLogoWhite.png" alt="CES" class="logo-img" />
     <span class="title">CES Access Control</span>
-  </div>
-  <div class="navbar__links">
-    <a class="navbar__link" routerLink="/" routerLinkActive="navbar__link--on" [routerLinkActiveOptions]="{ exact: true }">Dashboard</a>
-    <a class="navbar__link" routerLink="/access" routerLinkActive="navbar__link--on">Access control</a>
   </div>
   <div class="right">
     @if (session.session(); as s) {
