@@ -398,6 +398,19 @@ td.actions .btn + .btn { margin-left: 6px; }
 .urgency-toggle button.on { border-color: var(--gc-accent); color: var(--gc-text); background: rgba(37, 99, 235, 0.14); }
 .urgency-toggle button.on[data-u="urgent"] { border-color: var(--gc-error); background: rgba(220, 38, 38, 0.14); color: #ff9b98; }
 
+/* Multi-select variant (e.g. Stock access panel's role picker) — several
+   roles can be on at once, and an already-granted role is shown, not just
+   hidden, so "what does this user already have" is visible while picking
+   more. Wraps onto more than one row instead of squeezing every option
+   into one flex:1 line. */
+.urgency-toggle.multi { flex-wrap: wrap; }
+.urgency-toggle.multi button { flex: 1 1 30%; position: relative; }
+.urgency-toggle button.already {
+  opacity: 0.55; cursor: not-allowed; border-style: dashed;
+  background: var(--gc-surface-2);
+}
+.already-tick { margin-left: 5px; color: var(--gc-success); font-weight: 700; }
+
 /* ── Users & their access (grouped-by-user list on Stock access panel) ────
    Each user is a row that expands into a table of their grants. The header
    button is the full-row click target; the expanded body renders inside a

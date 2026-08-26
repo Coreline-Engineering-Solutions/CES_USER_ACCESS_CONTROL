@@ -1,5 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { TitleCasePipe } from '@angular/common';
 import { StockAccessApiService } from '../../../services/stock-access-api.service';
 import { SessionService } from '../../../session/session.service';
 import { AccessRole, AccessScope, LocationAccessGrant, OrgRow, StockLocation, StockUserRef } from '../../../services/stock-access.types';
@@ -32,7 +33,7 @@ const ORG_LABEL_OVERRIDES: Record<string, string> = {
 @Component({
   selector: 'app-stock-access-panel',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, TitleCasePipe],
   templateUrl: './stock-access-panel.component.html',
 })
 export class StockAccessPanelComponent implements OnInit {
@@ -257,14 +258,53 @@ export class StockAccessPanelComponent implements OnInit {
     }
   }
 
+  /** Every grantable role, in the same order as the filter bar's dropdown
+   *  above — kept as one canonical list so the grant form never drifts out
+   *  of sync with what the rest of this panel already treats as valid. */
+  readonly ALL_ROLES: AccessRole[] = ['viewer', 'operator', 'controller', 'auditor', 'custodian', 'receiver'];
+
   readonly showGrantModal = signal(false);
   readonly granting = signal(false);
   readonly grantError = signal<string | null>(null);
   readonly grantUserId = signal('');
-  readonly grantRole = signal<AccessRole>('viewer');
+  /** Multi-select — a user can hold several roles on the same scope (e.g.
+   *  Operator + Auditor on one location), and forcing one grant per modal
+   *  visit meant re-opening this dialog for every extra role. */
+  readonly grantRoles = signal<Set<AccessRole>>(new Set());
   readonly grantScope = signal<AccessScope>('location');
   readonly grantLocationId = signal('');
   readonly grantOrgId = signal('');
+
+  /** Roles the target user already holds for the *exact* scope being edited
+   *  — live over grantUserId/grantScope/grantLocationId/grantOrgId so the
+   *  modal updates as those change. Used to grey out roles that would
+   *  just duplicate an existing grant, so "which roles are already
+   *  assigned" is visible before you submit, not after a 400 comes back. */
+  readonly existingRolesForTarget = computed<Set<AccessRole>>(() => {
+    const userId = this.grantUserId().trim();
+    if (!userId) return new Set();
+    const scope = this.grantScope();
+    const locationId = this.grantLocationId();
+    const orgId = this.grantOrgId().trim();
+    const roles = new Set<AccessRole>();
+    for (const g of this.grants()) {
+      if (g.user_id !== userId || g.scope !== scope) continue;
+      if (scope === 'location' && g.location_id !== locationId) continue;
+      if (scope === 'org' && g.org_id !== orgId) continue;
+      roles.add(g.role);
+    }
+    return roles;
+  });
+
+  toggleGrantRole(role: AccessRole): void {
+    if (this.existingRolesForTarget().has(role)) return; // already granted — nothing to toggle
+    this.grantRoles.update((set) => {
+      const next = new Set(set);
+      if (next.has(role)) next.delete(role);
+      else next.add(role);
+      return next;
+    });
+  }
 
   readonly revoking = signal<string | null>(null);
 
@@ -348,7 +388,7 @@ export class StockAccessPanelComponent implements OnInit {
 
   openGrant(orgId?: string): void {
     this.grantUserId.set('');
-    this.grantRole.set('viewer');
+    this.grantRoles.set(new Set());
     this.grantScope.set(orgId ? 'org' : 'location');
     this.grantLocationId.set('');
     this.grantOrgId.set(orgId ?? '');
@@ -360,6 +400,15 @@ export class StockAccessPanelComponent implements OnInit {
     this.showGrantModal.set(false);
   }
 
+  /**
+   * Grants every newly-selected role in one submit — the backend only takes
+   * one role per call, so this fires them off in sequence. Roles that were
+   * already held for this exact scope are skipped rather than re-sent (see
+   * existingRolesForTarget). On a partial failure the modal stays open and
+   * grantRoles keeps its selection: reload() has by then refreshed
+   * existingRolesForTarget with whatever DID succeed, so submitting again
+   * only retries the roles that actually failed.
+   */
   async submitGrant(): Promise<void> {
     const userId = this.grantUserId().trim();
     if (!userId) {
@@ -374,25 +423,36 @@ export class StockAccessPanelComponent implements OnInit {
       this.grantError.set('Select an organisation.');
       return;
     }
+    const rolesToGrant = Array.from(this.grantRoles()).filter((r) => !this.existingRolesForTarget().has(r));
+    if (rolesToGrant.length === 0) {
+      this.grantError.set('Select at least one role that isn\'t already granted.');
+      return;
+    }
 
     this.granting.set(true);
     this.grantError.set(null);
-    try {
-      await this.stockAccess.locationAccessGrant({
-        user_id: userId,
-        role: this.grantRole(),
-        scope: this.grantScope(),
-        location_id: this.grantScope() === 'location' ? this.grantLocationId() : null,
-        org_id: this.grantScope() === 'org' ? this.grantOrgId().trim() : null,
-      });
-      this.showGrantModal.set(false);
-      await this.load();
-    } catch (err: any) {
-      console.error('[StockAccessPanel] grant failed:', err);
-      this.grantError.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to grant access');
-    } finally {
-      this.granting.set(false);
+    const failures: string[] = [];
+    for (const role of rolesToGrant) {
+      try {
+        await this.stockAccess.locationAccessGrant({
+          user_id: userId,
+          role,
+          scope: this.grantScope(),
+          location_id: this.grantScope() === 'location' ? this.grantLocationId() : null,
+          org_id: this.grantScope() === 'org' ? this.grantOrgId().trim() : null,
+        });
+      } catch (err: any) {
+        console.error('[StockAccessPanel] grant failed for role', role, err);
+        failures.push(`${role} (${err?.response?.data?.detail ?? err?.message ?? 'failed'})`);
+      }
     }
+    await this.load();
+    this.granting.set(false);
+    if (failures.length > 0) {
+      this.grantError.set(`Could not grant: ${failures.join(', ')}. The rest were saved — submit again to retry.`);
+      return;
+    }
+    this.showGrantModal.set(false);
   }
 
   async revokeGrant(g: LocationAccessGrant): Promise<void> {

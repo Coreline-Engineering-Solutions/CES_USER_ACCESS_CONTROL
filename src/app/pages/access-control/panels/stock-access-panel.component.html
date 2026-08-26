@@ -1,6 +1,6 @@
 <div class="hiernote">
   <span class="i">i</span>
-  <span>Each organisation controls its own warehouses, stockpiles, and bootstock. Access is granted per user at one of four levels: viewer / operator / controller / auditor, scoped to a location, a whole organisation, or the whole client.</span>
+  <span>Each organisation controls its own warehouses, stockpiles, and bootstock. Access is granted per user — one or more of viewer / operator / controller / auditor / custodian / receiver, scoped to a location, a whole organisation, or the whole client.</span>
 </div>
 
 @if (error()) {
@@ -220,13 +220,26 @@
           }
         </div>
         <div class="field">
-          <label>Role</label>
-          <div class="urgency-toggle">
-            <button type="button" [class.on]="grantRole() === 'viewer'" (click)="grantRole.set('viewer')">Viewer</button>
-            <button type="button" [class.on]="grantRole() === 'operator'" (click)="grantRole.set('operator')">Operator</button>
-            <button type="button" [class.on]="grantRole() === 'controller'" (click)="grantRole.set('controller')">Controller</button>
-            <button type="button" [class.on]="grantRole() === 'auditor'" (click)="grantRole.set('auditor')">Auditor</button>
+          <label>Roles</label>
+          <div class="urgency-toggle multi">
+            @for (r of ALL_ROLES; track r) {
+              <button type="button"
+                      [class.on]="grantRoles().has(r)"
+                      [class.already]="existingRolesForTarget().has(r)"
+                      [disabled]="existingRolesForTarget().has(r)"
+                      [title]="existingRolesForTarget().has(r) ? 'Already granted for this scope' : ''"
+                      (click)="toggleGrantRole(r)">
+                {{ r | titlecase }}
+                @if (existingRolesForTarget().has(r)) { <span class="already-tick">✓</span> }
+              </button>
+            }
           </div>
+          @if (existingRolesForTarget().size > 0) {
+            <div class="hiernote" style="margin-top:8px">
+              <span class="i">i</span>
+              <span>Greyed-out roles are already granted to this user for this exact scope — revoke one first if you need to change it.</span>
+            </div>
+          }
         </div>
         <div class="field">
           <label>Scope</label>
