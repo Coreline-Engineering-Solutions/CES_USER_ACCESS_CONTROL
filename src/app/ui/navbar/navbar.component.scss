@@ -59,7 +59,91 @@
 .right {
   display: flex;
   align-items: center;
+  gap: 10px;
   margin-left: auto;
+}
+
+// ── Database selector (ported verbatim from CES_MODULES' navbar) ─────────
+.db-selector {
+  position: relative;
+}
+
+.db-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--gc-surface-2);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--radius-md);
+  color: var(--gc-text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+
+  &:hover { border-color: rgba(37, 99, 235, 0.35); }
+  &.loading { opacity: 0.6; pointer-events: none; }
+
+  .chevron { opacity: 0.5; transition: transform 0.15s; }
+  &:hover .chevron { opacity: 1; }
+}
+
+.db-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.db-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+}
+
+.db-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 220px;
+  background: var(--gc-surface-1);
+  border: 1px solid var(--gc-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 200;
+  overflow: hidden;
+}
+
+.db-dropdown-header {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--gc-text-muted);
+  border-bottom: 1px solid var(--gc-border);
+  background: var(--gc-surface-2);
+}
+
+.db-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--gc-text);
+  cursor: pointer;
+  transition: background 0.1s;
+
+  &:hover { background: var(--gc-surface-2); }
+  &.active { color: var(--gc-accent); }
+
+  .check { margin-left: auto; color: var(--gc-accent); flex-shrink: 0; }
+}
+
+.db-empty, .db-loading {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--gc-text-muted);
+  text-align: center;
 }
 
 .avatar {

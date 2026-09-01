@@ -23,6 +23,12 @@ export class SessionService {
   readonly requiredTool = signal<string | null>(null);
   readonly profileImage = signal<string | null>(null);
 
+  /** Database switcher — same /auth/dbs, /auth/db/current, /auth/db/set
+   *  contract as CES_MODULES' navbar (ported verbatim, same AUTH_API). */
+  readonly databases = signal<any[]>([]);
+  readonly currentDb = signal<any>(null);
+  readonly loadingDbs = signal<boolean>(false);
+
   /**
    * True when the user holds `_list_user_projects` on `GIS System` — the
    * same system-manager privilege check used across the CES app family.
@@ -156,6 +162,89 @@ export class SessionService {
   /** Convenience getter — returns the cached user_gid or ''. */
   getUserGid(): string {
     return this.session()?.user_gid || '';
+  }
+
+  // ─── Database switcher ────────────────────────────────────────────────
+  // Ported from CES_MODULES' navbar/session.service.ts — same three
+  // endpoints, same session_gid contract, same confirm-before-reload logic.
+
+  async fetchDatabases(): Promise<any[]> {
+    const sess = this.session();
+    if (!sess) return [];
+
+    this.loadingDbs.set(true);
+    try {
+      const res = await fetch(`${this.AUTH_API}/auth/dbs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_gid: sess.session_gid }),
+      });
+      const data = await res.json();
+      // API returns { response: "_S", db_list: [...] }
+      const dbs = Array.isArray(data) ? data : (data?.db_list ?? data?.data ?? data?.dbs ?? []);
+      this.databases.set(dbs);
+      return dbs;
+    } catch (err) {
+      console.error('[Session] Failed to fetch databases:', err);
+      return [];
+    } finally {
+      this.loadingDbs.set(false);
+    }
+  }
+
+  async fetchCurrentDb(): Promise<any> {
+    const sess = this.session();
+    if (!sess) return null;
+
+    try {
+      const res = await fetch(`${this.AUTH_API}/auth/db/current`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_gid: sess.session_gid }),
+      });
+      const data = await res.json();
+      this.currentDb.set(data);
+      return data;
+    } catch (err) {
+      console.error('[Session] Failed to fetch current DB:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Flips the session's active DB, then polls /auth/db/current until the
+   * backend confirms it — reloading before that confirmation lands the new
+   * page against the OLD DB context (stale data), so callers must not
+   * reload on a `false` return.
+   */
+  async setCurrentDb(db_gid: string): Promise<boolean> {
+    const sess = this.session();
+    if (!sess) return false;
+
+    try {
+      const res = await fetch(`${this.AUTH_API}/auth/db/set`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_gid: sess.session_gid, db_gid }),
+      });
+      await res.json();
+
+      const POLL_INTERVAL_MS = 400;
+      const MAX_WAIT_MS = 8000;
+      const start = Date.now();
+      while (Date.now() - start < MAX_WAIT_MS) {
+        const current = await this.fetchCurrentDb();
+        const liveDbGid = String(current?.db_gid ?? '').trim();
+        if (liveDbGid === db_gid) return true;
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      }
+
+      console.warn('[Session] DB switch confirmation timed out after', MAX_WAIT_MS, 'ms');
+      return false;
+    } catch (err) {
+      console.error('[Session] Failed to set DB:', err);
+      return false;
+    }
   }
 
   private readonly privilegeCache = new Map<string, boolean>();
