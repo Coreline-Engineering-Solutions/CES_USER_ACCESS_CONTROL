@@ -26,30 +26,39 @@
     }
   </div>
 
-  <div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr));padding-top:10px">
-    @for (org of orgs(); track org.org_id) {
-      <div class="lcard" [class.active]="grantOrgFilter() === org.org_id">
-        <div class="lcard-h">
-          <div>
-            <h3>{{ orgName(org.org_id) }}</h3>
-            <small>{{ org.count }} location{{ org.count === 1 ? '' : 's' }}</small>
-          </div>
-        </div>
-        <div style="display:flex;gap:6px;margin-top:8px">
-          <button class="btn" style="flex:1"
-                  title="Filter the grants table below to only this organisation."
-                  (click)="grantOrgFilter.set(grantOrgFilter() === org.org_id ? '' : org.org_id)">
-            {{ grantOrgFilter() === org.org_id ? 'Showing' : 'Filter' }}
-          </button>
-          @if (canAdmin()) {
-            <button class="btn" style="flex:1" title="Create a location for this organisation." (click)="openCreateLocation(org.org_id)">+ Location</button>
-            <button class="btn primary" style="flex:2" title="Grant a user access at this organisation's scope." (click)="openGrant(org.org_id)">+ Grant</button>
-          }
-        </div>
-      </div>
-    } @empty {
-      <div style="color:var(--gc-text-muted)">No organisations registered yet.</div>
-    }
+  <div class="tablewrap" style="padding-top:10px">
+    <table>
+      <thead>
+        <tr>
+          <th>Organisation</th><th>Location types</th>
+          <th class="num">Locations</th><th class="num">Access grants</th>
+          <th class="actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (org of orgs(); track org.org_id) {
+          <tr [class.active]="grantOrgFilter() === org.org_id">
+            <td>{{ orgName(org.org_id) }}</td>
+            <td>{{ orgTypesLabel(org.types) }}</td>
+            <td class="num">{{ org.count }}</td>
+            <td class="num">{{ orgGrantCount(org.org_id) }}</td>
+            <td class="actions" style="white-space:nowrap">
+              <button class="btn"
+                      title="Filter the grants table below to only this organisation."
+                      (click)="grantOrgFilter.set(grantOrgFilter() === org.org_id ? '' : org.org_id)">
+                {{ grantOrgFilter() === org.org_id ? 'Showing' : 'Filter' }}
+              </button>
+              @if (canAdmin()) {
+                <button class="btn" title="Create a location for this organisation." (click)="openCreateLocation(org.org_id)">+ Location</button>
+                <button class="btn primary" title="Grant a user access at this organisation's scope." (click)="openGrant(org.org_id)">+ Grant</button>
+              }
+            </td>
+          </tr>
+        } @empty {
+          <tr><td colspan="5" style="color:var(--gc-text-muted)">No organisations registered yet.</td></tr>
+        }
+      </tbody>
+    </table>
   </div>
 
   <!-- ── Users & their access (grants grouped by user) ────────────────── -->

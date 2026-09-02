@@ -755,6 +755,26 @@ export class StockAccessPanelComponent implements OnInit {
     return ORG_LABEL_OVERRIDES[org_id] ?? `Demo Org ${org_id.slice(0, 6)}`;
   }
 
+  /** Grants that actually apply AT this org: org-scoped grants naming it
+   *  directly, plus location-scoped grants whose location belongs to it.
+   *  Deliberately excludes client-wide grants — those apply to every org at
+   *  once, so folding them into one org's count would overstate that org's
+   *  own access and understate the others'. */
+  orgGrantCount(org_id: string): number {
+    const locIds = new Set(this.locations().filter((l) => l.org_id === org_id).map((l) => l.global_id));
+    return this.grants().filter((g) =>
+      (g.scope === 'org' && g.org_id === org_id) ||
+      (g.scope === 'location' && g.location_id != null && locIds.has(g.location_id))
+    ).length;
+  }
+
+  /** "warehouse, stockpile, bootstock" — sorted for a stable display order,
+   *  independent of Set insertion order (which follows location() array order). */
+  orgTypesLabel(types: Set<string>): string {
+    const order = ['warehouse', 'stockpile', 'bootstock'];
+    return order.filter((t) => types.has(t)).join(', ') || '—';
+  }
+
   openGrant(orgId?: string): void {
     this.grantUserId.set('');
     this.grantUserManualEntry.set(false);
