@@ -256,16 +256,16 @@
 
         @if (locDraftType() === 'bootstock') {
           <div class="field">
-            <label>Custodian <span class="req" title="Required for bootstock — the person who attests this location's stock.">*</span></label>
-            @if (pickableUsers().length > 0) {
+            <label>Custodian <span class="req" title="Required for bootstock — the person who attests this location's stock. Submitted by email — the backend resolves it to the actual user.">*</span></label>
+            @if (users().length > 0) {
               <select class="sel" [ngModel]="locDraftCustodianUserId()" (ngModelChange)="locDraftCustodianUserId.set($event)">
                 <option value="">— select —</option>
-                @for (u of pickableUsers(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
+                @for (u of users(); track u.email) { <option [value]="u.email">{{ u.email }}</option> }
               </select>
             } @else {
-              <input class="inp" [ngModel]="locDraftCustodianUserId()" (ngModelChange)="locDraftCustodianUserId.set($event)" placeholder="user UUID">
+              <input class="inp" [ngModel]="locDraftCustodianUserId()" (ngModelChange)="locDraftCustodianUserId.set($event)" placeholder="user email">
               <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">
-                No user with a resolvable ID found for this org yet — paste their user UUID directly.
+                No users found for this org yet — enter their email directly.
                 @if (usersRawSample()) { <br>Sample: <span style="font-family:monospace;word-break:break-all">{{ usersRawSample() }}</span> }
               </div>
             }
