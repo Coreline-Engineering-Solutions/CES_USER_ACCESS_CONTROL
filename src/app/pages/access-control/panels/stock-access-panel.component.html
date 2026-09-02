@@ -250,7 +250,7 @@
             @if (pickableProjects().length > 0) {
               <select class="sel" [ngModel]="locDraftProjectId()" (ngModelChange)="locDraftProjectId.set($event)">
                 <option value="">— select a project —</option>
-                @for (p of pickableProjects(); track p.global_id) { <option [value]="p.global_id">{{ p.name }}</option> }
+                @for (p of pickableProjects(); track pickableProjectId(p)) { <option [value]="pickableProjectId(p)">{{ p.name }}</option> }
               </select>
             } @else {
               <input class="inp" [ngModel]="locDraftProjectId()" (ngModelChange)="locDraftProjectId.set($event)" placeholder="project UUID">

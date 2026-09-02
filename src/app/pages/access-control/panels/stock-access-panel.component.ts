@@ -100,15 +100,27 @@ export class StockAccessPanelComponent implements OnInit {
   // Manager's ReferenceDataService.loadProjects()/pickableProjects() use —
   // ported here so the New location modal's stockpile Project field can be
   // a real dropdown instead of a manual UUID paste.
-  readonly projects = signal<{ global_id: string; name: string }[]>([]);
-  /** Only entries with a resolved UUID are selectable — the stock backend
-   *  rejects the legacy numeric project_id. Sorted by name. */
+  readonly projects = signal<{ global_id: string; project_id: number; name: string }[]>([]);
+  /** Every named project shows up here now, not just ones with a resolved
+   *  UUID — 2 Sep: hiding pre-migration projects entirely was worse than the
+   *  submission risk (see pickableProjectId() below), since an account
+   *  whose projects simply hadn't been backfilled yet saw "no projects" and
+   *  had to paste a raw UUID by hand for a project it could plainly see the
+   *  name of. Mirrors CES_STOCK_MANAGER's ReferenceDataService.pickableProjects()
+   *  — keep the two in sync. Sorted by name. */
   readonly pickableProjects = computed(() =>
     this.projects()
-      .filter((p) => p.global_id.length > 0 && p.name.length > 0)
+      .filter((p) => p.name.length > 0)
       .slice()
       .sort((a, b) => a.name.localeCompare(b.name)),
   );
+
+  /** The value to actually submit/track for a project row — prefer the real
+   *  UUID, fall back to the legacy numeric id (stringified) when the backend
+   *  hasn't backfilled global_id for this project yet. */
+  pickableProjectId(p: { global_id: string; project_id: number }): string {
+    return p.global_id || String(p.project_id);
+  }
 
   /** Raw-vs-pickable breakdown for /admin/projects/all, shown in the New
    *  location modal's empty state when pickableProjects() is empty — same
@@ -137,6 +149,7 @@ export class StockAccessPanelComponent implements OnInit {
           p?.global_id ?? p?.project_gid ?? p?.projectGid ?? p?.gid ?? p?.uuid ??
           p?.project_uuid ?? p?.projectUuid ?? p?.globalId ?? ''
         ).trim(),
+        project_id: Number(p?.project_id ?? 0),
         name: String(p?.project_name ?? p?.name ?? p?.projectName ?? '').trim(),
       }));
       this.projects.set(list);
