@@ -80,15 +80,41 @@ export class StockAccessPanelComponent implements OnInit {
    *  "invalid input for query argument $5: 'gustavhunsinger@gmail.com'".
    *  Every dropdown that SUBMITS a user_gid must filter through this. */
   private static readonly UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  readonly pickableUsers = computed(() => this.users().filter((u) => StockAccessPanelComponent.UUID_RE.test(u.user_gid)));
+
+  /** Union of every org's db-linked users, deduped by email — the actual
+   *  picker source for Grant's User field below. Deliberately narrower than
+   *  users() (which folds in session.listAllUsers(), a genuinely
+   *  system-wide, cross-client directory) — 2 Sep: Grant's picker must only
+   *  offer users linked to a db this admin can already see, never "anyone
+   *  registered anywhere," per explicit direction repeated throughout this
+   *  session. The manual-entry escape hatch (grantUserManualEntry) still
+   *  covers granting to someone not yet linked to any org on file — that
+   *  was the actual reason the system-wide fold-in got added in the first
+   *  place, and manual entry covers it without needing to show the whole
+   *  system's users to do it. */
+  readonly dbLinkedUsers = computed<StockUserRef[]>(() => {
+    const byEmail = new Map<string, StockUserRef>();
+    for (const list of this.usersByOrg().values()) {
+      for (const u of list) {
+        const key = u.email.toLowerCase();
+        const existing = byEmail.get(key);
+        if (!existing || (u.user_gid && u.user_gid !== u.email && existing.user_gid === existing.email)) {
+          byEmail.set(key, u);
+        }
+      }
+    }
+    return Array.from(byEmail.values()).sort((a, b) => a.email.localeCompare(b.email));
+  });
+
+  readonly pickableUsers = computed(() => this.dbLinkedUsers().filter((u) => StockAccessPanelComponent.UUID_RE.test(u.user_gid)));
 
   /** Per-org membership, built alongside users() by loadUsers() from the
    *  SAME per-org gis+auth+nameFallback lookups but WITHOUT the system-wide
-   *  listAllUsers() catch-all folded in — unlike Grant (which intentionally
-   *  wants "any registered user" so it can link someone new to an org, see
-   *  loadUsers()'s own doc comment), the location-create Custodian field
-   *  must only offer people actually linked to the location's db. Keyed by
-   *  org_id (== client db gid), same key locDraftOrgId() holds. */
+   *  listAllUsers() catch-all folded in — both the location-create
+   *  Custodian field AND Grant's User field (via dbLinkedUsers() above,
+   *  which unions this map) must only offer people actually linked to a
+   *  db this admin can see. Keyed by org_id (== client db gid), same key
+   *  locDraftOrgId() holds. */
   readonly usersByOrg = signal<Map<string, StockUserRef[]>>(new Map());
   /** Custodian dropdown source for the location-create modal — just the
    *  users linked to whichever org locDraftOrgId() currently holds, not the
@@ -705,14 +731,16 @@ export class StockAccessPanelComponent implements OnInit {
       this.usersByOrg.set(orgUsersMap);
 
       // System-wide catch-all, fetched once (not per-org — this directory
-      // isn't scoped to any one database). A grant's user_id can be a real,
-      // valid registered user who simply never showed up in any of the
-      // three narrower "linked to THIS db" lookups above — confirmed live:
-      // grants existed for user_gids that stayed unresolved through all
-      // three, permanently showing as a bare UUID in Users & their access.
-      // Lowest priority in the merge below (pushed last) — the db-scoped
-      // sources are more specifically relevant when they do have the
-      // answer, this is what catches everyone else.
+      // isn't scoped to any one database). DISPLAY resolution only as of
+      // 2 Sep — a grant's user_id can be a real, valid registered user who
+      // simply never showed up in any of the three narrower "linked to THIS
+      // db" lookups above, and without this, that grant would permanently
+      // show as a bare UUID in Users & their access instead of an email.
+      // It is NOT a picker source any more: dbLinkedUsers()/pickableUsers()
+      // above are built from usersByOrg only, deliberately excluding this —
+      // Grant's User field must only offer people linked to a db this admin
+      // can see, never "anyone registered anywhere." Lowest priority in the
+      // users() merge below (pushed last) for the same reason.
       const allUsers = await this.session.listAllUsers().catch((err) => {
         this.usersDebugGlobal.set(`error: ${err?.message ?? err}`);
         return [] as any[];
