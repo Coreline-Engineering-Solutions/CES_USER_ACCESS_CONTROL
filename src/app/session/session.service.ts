@@ -215,9 +215,18 @@ export class SessionService {
       });
       const data = await res.json();
       const list = data?.emails ?? data?.email_list ?? data?.users ?? data;
-      return Array.isArray(list) ? list : [];
+      const result = Array.isArray(list) ? list : [];
+      // Temporary, loud diagnostic — the frontend port of this call
+      // (matching AC's user-session.ts byte-for-byte: same URL, same
+      // payload) is coming back empty against at least one real database,
+      // and there's no way to tell from here whether that's a genuinely
+      // empty result, a non-2xx response with a JSON error body (still
+      // parses fine, still returns []), or something else. Remove once
+      // the Grant modal's dropdown is confirmed working end-to-end.
+      console.info('[Session] dbUsersList', db_gid, '-> status', res.status, 'raw:', data, '-> parsed', result.length, 'user(s)');
+      return result;
     } catch (err) {
-      console.error('[Session] dbUsersList failed:', err);
+      console.error('[Session] dbUsersList failed for', db_gid, ':', err);
       return [];
     }
   }
@@ -239,9 +248,11 @@ export class SessionService {
         body: JSON.stringify({ function: '_check_database_users', session_gid: sess.session_gid, database }),
       });
       const data = await res.json();
-      return typeof data?.response === 'string' && data.response.startsWith('_S') ? (data.emails ?? []) : [];
+      const result = typeof data?.response === 'string' && data.response.startsWith('_S') ? (data.emails ?? []) : [];
+      console.info('[Session] checkDatabaseUsers', database, '-> status', res.status, 'raw:', data, '-> parsed', result.length, 'user(s)'); // temporary, see dbUsersList
+      return result;
     } catch (err) {
-      console.error('[Session] checkDatabaseUsers failed:', err);
+      console.error('[Session] checkDatabaseUsers failed for', database, ':', err);
       return [];
     }
   }
