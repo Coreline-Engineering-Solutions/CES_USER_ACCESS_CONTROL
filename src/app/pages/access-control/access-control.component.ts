@@ -16,7 +16,7 @@ type Tab = 'projects' | 'roles' | 'users';
 })
 export class AccessControlComponent implements OnInit {
   private readonly rolesApi = inject(RolesApiService);
-  private readonly session = inject(SessionService);
+  readonly session = inject(SessionService); // template reads session.allUserEmails()
 
   readonly activeTab = signal<Tab>('projects');
   readonly loading = signal(true);
@@ -79,6 +79,7 @@ export class AccessControlComponent implements OnInit {
   ngOnInit(): void {
     void this.load();
     void this.session.hasPrivilege('_manage_client_roles').then((v) => this.canManageRoles.set(v));
+    void this.session.loadAllUserEmails();
   }
 
   setTab(t: Tab): void {

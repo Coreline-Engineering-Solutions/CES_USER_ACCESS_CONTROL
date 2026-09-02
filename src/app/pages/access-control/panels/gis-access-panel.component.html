@@ -36,8 +36,15 @@
     <div class="field-row" style="max-width:520px;align-items:flex-end">
       <div class="field">
         <label>User email</label>
-        <input class="inp" [ngModel]="lookupEmail()" (ngModelChange)="lookupEmail.set($event)"
-               (keydown.enter)="lookupUser()" placeholder="user@example.com">
+        @if (session.allUserEmails().length > 0) {
+          <select class="sel" [ngModel]="lookupEmail()" (ngModelChange)="lookupEmail.set($event)">
+            <option value="">— select a user —</option>
+            @for (e of session.allUserEmails(); track e) { <option [value]="e">{{ e }}</option> }
+          </select>
+        } @else {
+          <input class="inp" [ngModel]="lookupEmail()" (ngModelChange)="lookupEmail.set($event)"
+                 (keydown.enter)="lookupUser()" placeholder="user@example.com">
+        }
       </div>
       <button class="btn primary" [disabled]="!lookupEmail().trim() || userProjectsLoading()" (click)="lookupUser()">
         {{ userProjectsLoading() ? 'Looking up…' : 'Look up' }}

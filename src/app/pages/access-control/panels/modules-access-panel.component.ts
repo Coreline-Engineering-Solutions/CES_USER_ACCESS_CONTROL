@@ -20,7 +20,7 @@ import { ModuleAccessEntry, ModuleAccessLevel, ModuleSummary, UserModuleAccess }
 })
 export class ModulesAccessPanelComponent implements OnInit {
   private readonly modulesAccess = inject(ModulesAccessApiService);
-  private readonly session = inject(SessionService);
+  readonly session = inject(SessionService); // template reads session.allUserEmails()
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -79,6 +79,7 @@ export class ModulesAccessPanelComponent implements OnInit {
 
   ngOnInit(): void {
     void this.load();
+    void this.session.loadAllUserEmails();
   }
 
   async load(): Promise<void> {

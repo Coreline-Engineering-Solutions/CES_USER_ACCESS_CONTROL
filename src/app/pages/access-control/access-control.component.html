@@ -135,7 +135,14 @@
           <div class="field-row" style="max-width:640px">
             <div class="field">
               <label>User email</label>
-              <input class="inp" [ngModel]="assignEmail()" (ngModelChange)="assignEmail.set($event)" placeholder="user@example.com">
+              @if (session.allUserEmails().length > 0) {
+                <select class="sel" [ngModel]="assignEmail()" (ngModelChange)="assignEmail.set($event)">
+                  <option value="">— select a user —</option>
+                  @for (e of session.allUserEmails(); track e) { <option [value]="e">{{ e }}</option> }
+                </select>
+              } @else {
+                <input class="inp" [ngModel]="assignEmail()" (ngModelChange)="assignEmail.set($event)" placeholder="user@example.com">
+              }
             </div>
             <div class="field">
               <label>Role</label>
@@ -196,7 +203,14 @@
         </p>
         <div class="field">
           <label>User email</label>
-          <input class="inp" [ngModel]="revokeAssignmentEmail()" (ngModelChange)="revokeAssignmentEmail.set($event)" placeholder="user@example.com">
+          @if (session.allUserEmails().length > 0) {
+            <select class="sel" [ngModel]="revokeAssignmentEmail()" (ngModelChange)="revokeAssignmentEmail.set($event)">
+              <option value="">— select a user —</option>
+              @for (e of session.allUserEmails(); track e) { <option [value]="e">{{ e }}</option> }
+            </select>
+          } @else {
+            <input class="inp" [ngModel]="revokeAssignmentEmail()" (ngModelChange)="revokeAssignmentEmail.set($event)" placeholder="user@example.com">
+          }
         </div>
       </div>
       <div class="m-f">

@@ -129,7 +129,14 @@
         @if (moduleGrantError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ moduleGrantError() }}</span></div> }
         <div class="field">
           <label>User email</label>
-          <input class="inp" [ngModel]="moduleGrantEmail()" (ngModelChange)="moduleGrantEmail.set($event)" placeholder="user@example.com">
+          @if (session.allUserEmails().length > 0) {
+            <select class="sel" [ngModel]="moduleGrantEmail()" (ngModelChange)="moduleGrantEmail.set($event)">
+              <option value="">— select a user —</option>
+              @for (e of session.allUserEmails(); track e) { <option [value]="e">{{ e }}</option> }
+            </select>
+          } @else {
+            <input class="inp" [ngModel]="moduleGrantEmail()" (ngModelChange)="moduleGrantEmail.set($event)" placeholder="user@example.com">
+          }
         </div>
         <div class="field">
           <label>Role</label>

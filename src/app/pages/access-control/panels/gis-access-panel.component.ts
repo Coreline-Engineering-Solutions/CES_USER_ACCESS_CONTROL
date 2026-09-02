@@ -20,7 +20,7 @@ import { GisProject } from '../../../services/gis-access.types';
 })
 export class GisAccessPanelComponent implements OnInit {
   private readonly api = inject(GisAccessApiService);
-  private readonly session = inject(SessionService);
+  readonly session = inject(SessionService); // template reads session.allUserEmails()
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -70,6 +70,7 @@ export class GisAccessPanelComponent implements OnInit {
 
   ngOnInit(): void {
     void this.load();
+    void this.session.loadAllUserEmails();
   }
 
   async load(): Promise<void> {
