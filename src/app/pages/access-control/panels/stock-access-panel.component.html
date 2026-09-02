@@ -248,6 +248,7 @@
               <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">
                 No selectable projects for this account — paste the project's UUID from GIS, or check GIS project access is granted.
                 <br>{{ projectsDebug() }}
+                @if (projectsRawSample()) { <br>Sample: <span style="font-family:monospace;word-break:break-all">{{ projectsRawSample() }}</span> }
               </div>
             }
           </div>
@@ -263,7 +264,10 @@
               </select>
             } @else {
               <input class="inp" [ngModel]="locDraftCustodianUserId()" (ngModelChange)="locDraftCustodianUserId.set($event)" placeholder="user UUID">
-              <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">No user with a resolvable ID found for this org yet — paste their user UUID directly.</div>
+              <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">
+                No user with a resolvable ID found for this org yet — paste their user UUID directly.
+                @if (usersRawSample()) { <br>Sample: <span style="font-family:monospace;word-break:break-all">{{ usersRawSample() }}</span> }
+              </div>
             }
           </div>
         }
@@ -320,6 +324,7 @@
                   </div>
                 }
                 <div>All registered users (system-wide): {{ usersDebugGlobal() }}</div>
+                @if (usersRawSample()) { <div>Sample: <span style="font-family:monospace;word-break:break-all">{{ usersRawSample() }}</span></div> }
               </div>
             }
             <div style="display:flex;gap:8px;align-items:center">

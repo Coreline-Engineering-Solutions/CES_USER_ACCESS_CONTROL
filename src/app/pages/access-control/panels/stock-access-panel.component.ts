@@ -67,6 +67,10 @@ export class StockAccessPanelComponent implements OnInit {
   /** Count/error for the system-wide catch-all (session.listAllUsers), '?'
    *  while loading. Shown next to usersDebug's per-org breakdown. */
   readonly usersDebugGlobal = signal<string>('?');
+  /** Raw JSON of the first non-string user object seen across any source,
+   *  so a field-name mismatch in the id lookup is visible directly in the
+   *  UI. Empty string until loadUsers() finds one. */
+  readonly usersRawSample = signal<string>('');
   /** Real UUID, not an email masquerading as one — loadUsers()'s merge
    *  falls back to the email itself as a StockUserRef's user_gid when none
    *  of the three lookup sources had a real id, so the entry still shows
@@ -100,15 +104,27 @@ export class StockAccessPanelComponent implements OnInit {
    *  global_id yet (pre-migration rows — see pickableProjects' doc
    *  comment), not that the fetch itself failed. */
   readonly projectsDebug = signal<string>('?');
+  /** Raw JSON of the first project object seen — same reasoning as
+   *  usersRawSample, for the same "is this an id-field-name mismatch or a
+   *  genuine pre-migration gap" question. */
+  readonly projectsRawSample = signal<string>('');
 
   private async loadProjects(): Promise<void> {
     try {
       const res = await this.stockAccess.projectsAll();
       const raw = (res as any)?.project_list ?? (res as any)?.projects ?? [];
       const rawList = Array.isArray(raw) ? raw : [];
+      if (rawList.length > 0) this.projectsRawSample.set(JSON.stringify(rawList[0]).slice(0, 300));
       const list = rawList.map((p: any) => ({
-        global_id: String(p?.global_id ?? p?.project_gid ?? '').trim(),
-        name: String(p?.project_name ?? p?.name ?? '').trim(),
+        // Widened on purpose — see loadUsers()'s usersRawSample comment for
+        // why: a narrower match was silently missing whichever field name
+        // this endpoint actually uses, showing "no projects" for accounts
+        // that do have real, pickable projects.
+        global_id: String(
+          p?.global_id ?? p?.project_gid ?? p?.projectGid ?? p?.gid ?? p?.uuid ??
+          p?.project_uuid ?? p?.projectUuid ?? p?.globalId ?? ''
+        ).trim(),
+        name: String(p?.project_name ?? p?.name ?? p?.projectName ?? '').trim(),
       }));
       this.projects.set(list);
       const withGid = list.filter((p) => p.global_id).length;
@@ -637,6 +653,18 @@ export class StockAccessPanelComponent implements OnInit {
       });
       if (this.usersDebugGlobal() === '?') this.usersDebugGlobal.set(String(allUsers.length));
 
+      // Raw shape of whatever the FIRST non-string entry we saw looked like,
+      // across every source — shown in the UI (see the empty-state debug
+      // block) so a field-name mismatch is visible directly instead of
+      // needing console access. If pickableUsers() is still empty after a
+      // widened id-field match below, this is the next thing to check.
+      if (!this.usersRawSample()) {
+        for (const list of [...perOrgLists, allUsers]) {
+          const sample = Array.isArray(list) ? list.find((u) => typeof u === 'object' && u) : null;
+          if (sample) { this.usersRawSample.set(JSON.stringify(sample).slice(0, 300)); break; }
+        }
+      }
+
       // Deduped by EMAIL (case-insensitive), not by id — the same person can
       // legitimately show up from more than one source with different id
       // shapes (a real gid from the GIS list, email-as-id from the auth-api
@@ -648,16 +676,25 @@ export class StockAccessPanelComponent implements OnInit {
         if (!Array.isArray(list)) continue;
         for (const u of list) {
           const isStr = typeof u === 'string';
-          const email = String(isStr ? u : (u?.email ?? u?.user_email ?? '')).trim();
-          const realId = String(isStr ? '' : (u?.user_gid ?? u?.gid ?? u?.user_id ?? u?.id ?? '')).trim();
+          const email = String(isStr ? u : (u?.email ?? u?.user_email ?? u?.userEmail ?? '')).trim();
+          // Widened on purpose — every plausible id-field spelling seen
+          // across this codebase's various user-list endpoints, since a
+          // narrower match was silently missing whichever one _list_users/
+          // dbUsersList actually use and forcing manual UUID entry for
+          // real, valid users. See usersRawSample above if this still
+          // comes up empty after this.
+          const realId = String(isStr ? '' : (
+            u?.user_gid ?? u?.userGid ?? u?.gid ?? u?.uuid ?? u?.UUID ??
+            u?.user_id ?? u?.userId ?? u?.id ?? u?.global_id ?? u?.globalId ?? ''
+          )).trim();
           if (!email) continue;
           const key = email.toLowerCase();
           const existing = byEmail.get(key);
           // No real id available — fall back to the email itself so the
-          // entry still shows up and is still selectable, rather than
-          // being silently dropped (the old behavior, and the actual bug).
-          // Only overwrite an existing entry if this one has a real id and
-          // the existing one didn't (i.e. never downgrade a known gid).
+          // entry still shows up in Users & their access for DISPLAY, but
+          // pickableUsers() below filters these back out of anything that
+          // actually submits a value — an email here is not a valid
+          // substitute UUID, confirmed live (Postgres rejects it outright).
           if (!existing) {
             byEmail.set(key, { user_gid: realId || email, email });
           } else if (realId && existing.user_gid === existing.email) {
