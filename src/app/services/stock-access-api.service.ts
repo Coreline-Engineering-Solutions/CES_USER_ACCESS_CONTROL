@@ -2,16 +2,19 @@ import { Injectable, inject } from '@angular/core';
 import axios, { AxiosInstance } from 'axios';
 import { SessionService } from '../session/session.service';
 import { environment } from '../../environments/environment';
-import { LocationAccessGrant, LocationAccessGrantPayload, OrgCreatePayload, OrgRow, StockLocation } from './stock-access.types';
+import { LocationAccessGrant, LocationAccessGrantPayload, LocationCreatePayload, OrgCreatePayload, OrgRow, StockLocation } from './stock-access.types';
 import { scrubTechnicalIds } from './error-scrub.util';
 
 /**
- * Wraps the `/stock/locations/*` endpoints this app needs for location
- * access grants (org/location/client-scoped viewer/operator/controller/
- * auditor roles). Same GIS API as CES_STOCK_MANAGER's StockApiService —
- * only the access-management slice, since that's what lives here per the
- * "CES_USER_ACCESS_CONTROL is the sole access-control admin surface"
- * decision (2026-07-27).
+ * Wraps the `/stock/locations/*` and `/stock/orgs/*` endpoints this app
+ * needs — location access grants (org/location/client-scoped viewer/
+ * operator/controller/auditor roles), plus creating the orgs and locations
+ * those grants attach to. Same GIS API as CES_STOCK_MANAGER's
+ * StockApiService — access management plus the create flows an admin
+ * setting up a brand-new org needs end-to-end, since that's what lives
+ * here per the "CES_USER_ACCESS_CONTROL is the sole access-control admin
+ * surface" decision (2026-07-27). Doesn't wrap locationUpdate or the
+ * broader stock/item/balance endpoints — those stay Stock Manager's.
  */
 @Injectable({ providedIn: 'root' })
 export class StockAccessApiService {
@@ -59,6 +62,10 @@ export class StockAccessApiService {
       location_type: null,
       status: null,
     });
+  }
+
+  locationCreate(payload: LocationCreatePayload) {
+    return this.post<{ response: string; location_id: string }>('/stock/locations/create', payload);
   }
 
   locationAccessGrant(payload: LocationAccessGrantPayload) {

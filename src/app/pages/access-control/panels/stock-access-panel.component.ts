@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { TitleCasePipe } from '@angular/common';
 import { StockAccessApiService } from '../../../services/stock-access-api.service';
 import { SessionService } from '../../../session/session.service';
-import { AccessRole, AccessScope, LocationAccessGrant, OrgRow, StockLocation, StockUserRef } from '../../../services/stock-access.types';
+import { AccessRole, AccessScope, LocationAccessGrant, LocationType, OrgRow, StockLocation, StockUserRef } from '../../../services/stock-access.types';
 
 /** One user, plus every grant they currently hold in this project. */
 interface UserGrantGroup {
@@ -293,6 +293,82 @@ export class StockAccessPanelComponent implements OnInit {
       // Non-fatal — orgName() falls back to the generic label map below,
       // so a permission gap on one database doesn't blank the whole panel.
       console.warn('[StockAccessPanel] real org directory load failed:', err);
+    }
+  }
+
+  // ─── Location creation ──────────────────────────────────────────────────
+  // /stock/locations/create — same endpoint and payload Stock Manager's own
+  // "New location" modal uses (see CES_STOCK_MANAGER's locations.component),
+  // just not previously wired up in this app. Without this, an admin who
+  // just registered a brand-new org (above) had to switch to Stock Manager
+  // to give it anywhere to actually hold stock.
+  readonly showCreateLocationModal = signal(false);
+  readonly locDraftType = signal<LocationType>('warehouse');
+  readonly locDraftName = signal('');
+  readonly locDraftOrgId = signal('');
+  /** Manual UUID entry, not a picker — this app has no GIS project data
+   *  loaded (Stock Manager's own picker falls back the same way when its
+   *  reference data hasn't loaded). Only relevant for the 'stockpile' type. */
+  readonly locDraftProjectId = signal('');
+  /** Only relevant for the 'bootstock' type. Picked from users() when
+   *  available (already loaded per-org by loadUsers() above); falls back to
+   *  a manual UUID field the same way the org picker does when empty. */
+  readonly locDraftCustodianUserId = signal('');
+  readonly locCreating = signal(false);
+  readonly locCreateError = signal<string | null>(null);
+
+  /** orgId pre-fills the organisation field when opened from a specific
+   *  org's card — mirrors openGrant(orgId?) below. */
+  openCreateLocation(orgId?: string): void {
+    this.locDraftType.set('warehouse');
+    this.locDraftName.set('');
+    this.locDraftOrgId.set(orgId ?? (this.orgs().length === 1 ? this.orgs()[0].org_id : ''));
+    this.locDraftProjectId.set('');
+    this.locDraftCustodianUserId.set('');
+    this.locCreateError.set(null);
+    this.showCreateLocationModal.set(true);
+  }
+
+  closeCreateLocation(): void {
+    this.showCreateLocationModal.set(false);
+  }
+
+  async submitCreateLocation(): Promise<void> {
+    const name = this.locDraftName().trim();
+    const orgId = this.locDraftOrgId().trim();
+    const type = this.locDraftType();
+    if (!name || !orgId) {
+      this.locCreateError.set('Name and organisation are both required.');
+      return;
+    }
+    if (type === 'stockpile' && !this.locDraftProjectId().trim()) {
+      this.locCreateError.set('Stockpiles require a project.');
+      return;
+    }
+    if (type === 'bootstock' && !this.locDraftCustodianUserId().trim()) {
+      this.locCreateError.set('Bootstock requires a custodian user.');
+      return;
+    }
+    this.locCreating.set(true);
+    this.locCreateError.set(null);
+    try {
+      await this.stockAccess.locationCreate({
+        org_id: orgId,
+        name,
+        location_type: type,
+        project_id: type === 'stockpile' ? this.locDraftProjectId().trim() : null,
+        custodian_user_id: type === 'bootstock' ? this.locDraftCustodianUserId().trim() : null,
+      });
+      this.showCreateLocationModal.set(false);
+      // Lightweight refresh — just the locations list, not the whole panel
+      // (matching submitCreateOrg()'s loadRealOrgs()-only refresh above).
+      const locRes = await this.stockAccess.locationsList();
+      this.locations.set(locRes?.locations ?? []);
+    } catch (err: any) {
+      console.error('[StockAccessPanel] location create failed:', err);
+      this.locCreateError.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to create location');
+    } finally {
+      this.locCreating.set(false);
     }
   }
 
