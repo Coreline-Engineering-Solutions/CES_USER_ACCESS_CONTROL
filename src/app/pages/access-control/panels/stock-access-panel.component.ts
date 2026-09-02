@@ -64,6 +64,9 @@ export class StockAccessPanelComponent implements OnInit {
    *  Grant modal when users() is empty, so what's actually failing is
    *  visible right there instead of needing console output relayed back. */
   readonly usersDebug = signal<UsersDebugRow[]>([]);
+  /** Count/error for the system-wide catch-all (session.listAllUsers), '?'
+   *  while loading. Shown next to usersDebug's per-org breakdown. */
+  readonly usersDebugGlobal = signal<string>('?');
 
   // ─── Filter/sort over the grants table ──────────────────────────────────
   // With multiple orgs each holding a handful of users at various levels,
@@ -511,6 +514,7 @@ export class StockAccessPanelComponent implements OnInit {
     const orgIds = this.orgs().map((o) => o.org_id).filter(Boolean);
     if (orgIds.length === 0) return;
     this.usersLoading.set(true);
+    this.usersDebugGlobal.set('?');
     try {
       // The name-based fallback below needs the database's real name, not
       // this app's own org label — session.databases() is what has that,
@@ -566,6 +570,21 @@ export class StockAccessPanelComponent implements OnInit {
       );
       this.usersDebug.set(debugRows);
 
+      // System-wide catch-all, fetched once (not per-org — this directory
+      // isn't scoped to any one database). A grant's user_id can be a real,
+      // valid registered user who simply never showed up in any of the
+      // three narrower "linked to THIS db" lookups above — confirmed live:
+      // grants existed for user_gids that stayed unresolved through all
+      // three, permanently showing as a bare UUID in Users & their access.
+      // Lowest priority in the merge below (pushed last) — the db-scoped
+      // sources are more specifically relevant when they do have the
+      // answer, this is what catches everyone else.
+      const allUsers = await this.session.listAllUsers().catch((err) => {
+        this.usersDebugGlobal.set(`error: ${err?.message ?? err}`);
+        return [] as any[];
+      });
+      if (this.usersDebugGlobal() === '?') this.usersDebugGlobal.set(String(allUsers.length));
+
       // Deduped by EMAIL (case-insensitive), not by id — the same person can
       // legitimately show up from more than one source with different id
       // shapes (a real gid from the GIS list, email-as-id from the auth-api
@@ -573,7 +592,7 @@ export class StockAccessPanelComponent implements OnInit {
       // instead of once. A real gid always wins over an email-fallback id
       // if we see both for the same person.
       const byEmail = new Map<string, StockUserRef>();
-      for (const list of perOrgLists) {
+      for (const list of [...perOrgLists, allUsers]) {
         if (!Array.isArray(list)) continue;
         for (const u of list) {
           const isStr = typeof u === 'string';

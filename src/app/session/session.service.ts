@@ -257,6 +257,38 @@ export class SessionService {
     }
   }
 
+  /**
+   * Every registered user in the system, system-wide — not scoped to any
+   * one database's linkage. Ported from AC's users-page.ts (user-session.ts
+   * fetchUsers(), same AUTH_API, `_list_users` RPC function). Used as a
+   * last-resort catch-all: a grant's user_id can be a real, valid system
+   * user who simply never showed up in any of the three narrower "linked to
+   * this specific db" lookups above (dbUsersList x2, checkDatabaseUsers) —
+   * confirmed live: grants existed for user_gids that stayed unresolved to
+   * an email through all three, permanently showing as a bare UUID in
+   * Users & their access. This is the same directory AC's own user
+   * management screen is built on, so if a person is registered at all,
+   * they're in here.
+   */
+  async listAllUsers(): Promise<any[]> {
+    const sess = this.session();
+    if (!sess) return [];
+    try {
+      const res = await fetch(`${this.AUTH_API}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ function: '_list_users', session_gid: sess.session_gid }),
+      });
+      const data = await res.json();
+      const result = typeof data?.response === 'string' && data.response.startsWith('_S') ? (data.user_list ?? []) : [];
+      console.info('[Session] listAllUsers -> status', res.status, '->', Array.isArray(result) ? result.length : 0, 'user(s)'); // temporary, see dbUsersList
+      return Array.isArray(result) ? result : [];
+    } catch (err) {
+      console.error('[Session] listAllUsers failed:', err);
+      return [];
+    }
+  }
+
   async fetchCurrentDb(): Promise<any> {
     const sess = this.session();
     if (!sess) return null;
