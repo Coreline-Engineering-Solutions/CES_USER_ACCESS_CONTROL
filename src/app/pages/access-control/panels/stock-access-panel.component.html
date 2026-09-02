@@ -16,6 +16,7 @@
     <span class="section-line"></span>
     @if (canAdmin()) {
       <button class="btn" title="Register a new organisation (name + client database ID) in the real org directory." (click)="openCreateOrg()">+ Register org</button>
+      <button class="btn" title="Create a warehouse, stockpile, or bootstock location for an organisation." (click)="openCreateLocation()">+ Add location</button>
       <button class="btn primary" title="Grant a user access to a specific location, a whole org, or the whole client." (click)="openGrant()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -41,12 +42,13 @@
             {{ grantOrgFilter() === org.org_id ? 'Showing' : 'Filter' }}
           </button>
           @if (canAdmin()) {
+            <button class="btn" style="flex:1" title="Create a location for this organisation." (click)="openCreateLocation(org.org_id)">+ Location</button>
             <button class="btn primary" style="flex:2" title="Grant a user access at this organisation's scope." (click)="openGrant(org.org_id)">+ Grant</button>
           }
         </div>
       </div>
     } @empty {
-      <div style="color:var(--gc-text-muted)">No locations on file yet.</div>
+      <div style="color:var(--gc-text-muted)">No organisations registered yet.</div>
     }
   </div>
 
@@ -190,6 +192,75 @@
         <button class="btn" (click)="closeCreateOrg()">Cancel</button>
         <button class="btn primary" style="margin-left:auto" [disabled]="orgCreating()" (click)="submitCreateOrg()">
           {{ orgCreating() ? 'Registering…' : 'Register' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- New location -->
+@if (showCreateLocationModal()) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="New location">
+    <div class="modal" style="width:520px">
+      <div class="m-h">
+        <h3>New location</h3>
+        <button class="x" (click)="closeCreateLocation()" aria-label="Close">✕</button>
+      </div>
+      <div class="m-sec">
+        @if (locCreateError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ locCreateError() }}</span></div> }
+
+        <div class="field">
+          <label>Type</label>
+          <div class="urgency-toggle">
+            <button type="button" [class.on]="locDraftType() === 'warehouse'" (click)="locDraftType.set('warehouse')">Warehouse</button>
+            <button type="button" [class.on]="locDraftType() === 'stockpile'" (click)="locDraftType.set('stockpile')">Stockpile</button>
+            <button type="button" [class.on]="locDraftType() === 'bootstock'" (click)="locDraftType.set('bootstock')">Bootstock</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Name <span class="req" title="Required">*</span></label>
+          <input class="inp" [ngModel]="locDraftName()" (ngModelChange)="locDraftName.set($event)" placeholder="e.g. WH Durbanville">
+        </div>
+
+        <div class="field">
+          <label>Organisation <span class="req" title="Required — must already be registered above.">*</span></label>
+          @if (orgs().length > 0) {
+            <select class="sel" [ngModel]="locDraftOrgId()" (ngModelChange)="locDraftOrgId.set($event)">
+              @if (orgs().length > 1) { <option value="">— select —</option> }
+              @for (org of orgs(); track org.org_id) { <option [value]="org.org_id">{{ orgName(org.org_id) }}</option> }
+            </select>
+          } @else {
+            <p style="margin:0;color:var(--gc-text-muted);font-size:12.5px">No organisations registered yet — register one first.</p>
+          }
+        </div>
+
+        @if (locDraftType() === 'stockpile') {
+          <div class="field">
+            <label>Project <span class="req" title="Required for stockpiles — the GIS project this stockpile belongs to.">*</span></label>
+            <input class="inp" [ngModel]="locDraftProjectId()" (ngModelChange)="locDraftProjectId.set($event)" placeholder="project UUID">
+            <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">No GIS project directory in this app — paste the project's UUID from GIS.</div>
+          </div>
+        }
+
+        @if (locDraftType() === 'bootstock') {
+          <div class="field">
+            <label>Custodian <span class="req" title="Required for bootstock — the person who attests this location's stock.">*</span></label>
+            @if (users().length > 0) {
+              <select class="sel" [ngModel]="locDraftCustodianUserId()" (ngModelChange)="locDraftCustodianUserId.set($event)">
+                <option value="">— select —</option>
+                @for (u of users(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
+              </select>
+            } @else {
+              <input class="inp" [ngModel]="locDraftCustodianUserId()" (ngModelChange)="locDraftCustodianUserId.set($event)" placeholder="user UUID">
+            }
+          </div>
+        }
+      </div>
+      <div class="m-f">
+        <button class="btn" (click)="closeCreateLocation()">Cancel</button>
+        <button class="btn primary" style="margin-left:auto" [disabled]="locCreating()" (click)="submitCreateLocation()">
+          {{ locCreating() ? 'Creating…' : 'Create location' }}
         </button>
       </div>
     </div>

@@ -19,6 +19,19 @@ export interface StockLocation {
   status: LocationStatus;
 }
 
+/** Mirrors CES_STOCK_MANAGER's LocationCreatePayload (stock.types.ts) — same
+ *  /stock/locations/create endpoint, same backend, this app just hadn't
+ *  wired it up yet (org creation was pulled out to here; location creation
+ *  wasn't, so an admin registering a brand-new org had no way to give it
+ *  anywhere to hold stock without switching to Stock Manager). */
+export interface LocationCreatePayload {
+  org_id: string;
+  name: string;
+  location_type: LocationType;
+  project_id?: string | null;
+  custodian_user_id?: string | null;
+}
+
 export interface LocationAccessGrant {
   global_id: string;
   user_id: string;
