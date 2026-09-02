@@ -67,6 +67,16 @@ export class StockAccessPanelComponent implements OnInit {
   /** Count/error for the system-wide catch-all (session.listAllUsers), '?'
    *  while loading. Shown next to usersDebug's per-org breakdown. */
   readonly usersDebugGlobal = signal<string>('?');
+  /** Real UUID, not an email masquerading as one — loadUsers()'s merge
+   *  falls back to the email itself as a StockUserRef's user_gid when none
+   *  of the three lookup sources had a real id, so the entry still shows
+   *  up and is still readable in Users & their access. That's fine for
+   *  DISPLAY, but confirmed live to break hard the moment that value is
+   *  actually submitted as a UUID column (custodian_user_id, grantUserId):
+   *  "invalid input for query argument $5: 'gustavhunsinger@gmail.com'".
+   *  Every dropdown that SUBMITS a user_gid must filter through this. */
+  private static readonly UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  readonly pickableUsers = computed(() => this.users().filter((u) => StockAccessPanelComponent.UUID_RE.test(u.user_gid)));
 
   // ─── GIS projects (stockpile location's project field) ──────────────────
   // Same GIS API, same /admin/projects/all endpoint, same shape Stock
@@ -83,17 +93,29 @@ export class StockAccessPanelComponent implements OnInit {
       .sort((a, b) => a.name.localeCompare(b.name)),
   );
 
+  /** Raw-vs-pickable breakdown for /admin/projects/all, shown in the New
+   *  location modal's empty state when pickableProjects() is empty — same
+   *  reasoning as usersDebug: a raw fetch count that doesn't match the
+   *  pickable count usually means real projects came back but without a
+   *  global_id yet (pre-migration rows — see pickableProjects' doc
+   *  comment), not that the fetch itself failed. */
+  readonly projectsDebug = signal<string>('?');
+
   private async loadProjects(): Promise<void> {
     try {
       const res = await this.stockAccess.projectsAll();
       const raw = (res as any)?.project_list ?? (res as any)?.projects ?? [];
-      const list = (Array.isArray(raw) ? raw : []).map((p: any) => ({
+      const rawList = Array.isArray(raw) ? raw : [];
+      const list = rawList.map((p: any) => ({
         global_id: String(p?.global_id ?? p?.project_gid ?? '').trim(),
         name: String(p?.project_name ?? p?.name ?? '').trim(),
       }));
       this.projects.set(list);
-    } catch (err) {
+      const withGid = list.filter((p) => p.global_id).length;
+      this.projectsDebug.set(`${rawList.length} project(s) returned, ${withGid} with a usable global_id`);
+    } catch (err: any) {
       console.warn('[StockAccessPanel] projects lookup failed:', err);
+      this.projectsDebug.set(`error: ${err?.response?.status ?? err?.message ?? err}`);
     }
   }
 

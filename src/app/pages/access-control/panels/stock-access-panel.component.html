@@ -245,7 +245,10 @@
               </select>
             } @else {
               <input class="inp" [ngModel]="locDraftProjectId()" (ngModelChange)="locDraftProjectId.set($event)" placeholder="project UUID">
-              <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">No projects found for this account — paste the project's UUID from GIS, or check GIS project access is granted.</div>
+              <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">
+                No selectable projects for this account — paste the project's UUID from GIS, or check GIS project access is granted.
+                <br>{{ projectsDebug() }}
+              </div>
             }
           </div>
         }
@@ -253,13 +256,14 @@
         @if (locDraftType() === 'bootstock') {
           <div class="field">
             <label>Custodian <span class="req" title="Required for bootstock — the person who attests this location's stock.">*</span></label>
-            @if (users().length > 0) {
+            @if (pickableUsers().length > 0) {
               <select class="sel" [ngModel]="locDraftCustodianUserId()" (ngModelChange)="locDraftCustodianUserId.set($event)">
                 <option value="">— select —</option>
-                @for (u of users(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
+                @for (u of pickableUsers(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
               </select>
             } @else {
               <input class="inp" [ngModel]="locDraftCustodianUserId()" (ngModelChange)="locDraftCustodianUserId.set($event)" placeholder="user UUID">
+              <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">No user with a resolvable ID found for this org yet — paste their user UUID directly.</div>
             }
           </div>
         }
@@ -288,13 +292,13 @@
           <label>User</label>
           @if (usersLoading()) {
             <div class="inp" style="color:var(--gc-text-muted)">Loading users…</div>
-          } @else if (users().length > 0) {
+          } @else if (pickableUsers().length > 0) {
             @if (grantUserManualEntry()) {
               <input class="inp" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)" placeholder="user UUID">
             } @else {
               <select class="sel" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)">
                 <option value="">— select —</option>
-                @for (u of users(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
+                @for (u of pickableUsers(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
               </select>
             }
             <button type="button" class="btn" style="margin-top:6px;font-size:11px;padding:5px 9px"
