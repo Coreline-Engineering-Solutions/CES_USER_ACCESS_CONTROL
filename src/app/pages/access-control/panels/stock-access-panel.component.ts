@@ -214,12 +214,39 @@ export class StockAccessPanelComponent implements OnInit {
   readonly orgDraftClientDbGid = signal('');
   readonly orgCreating = signal(false);
   readonly orgCreateError = signal<string | null>(null);
+  /** True while openCreateOrg() is fetching the active DB's gid — the modal
+   *  shows a loading state on the ID field instead of an empty one, since
+   *  it's no longer something the admin types themselves. */
+  readonly orgDraftDbLoading = signal(false);
 
-  openCreateOrg(): void {
+  /** org_id in this schema IS a client_db_gid (see the class doc comment
+   *  above and stock-access.types.ts) — the org being registered here isn't
+   *  a new database, it's a NAME for the database this admin session is
+   *  currently pointed at. Making the admin hand-type that UUID was just an
+   *  opportunity for a copy-paste mistake to register a name against the
+   *  wrong client's data; fetch it straight from the session instead. */
+  async openCreateOrg(): Promise<void> {
     this.orgDraftName.set('');
     this.orgDraftClientDbGid.set('');
     this.orgCreateError.set(null);
     this.showCreateOrgModal.set(true);
+    this.orgDraftDbLoading.set(true);
+    try {
+      // Re-fetch rather than trusting navbar's earlier load — "currently in
+      // use" should mean live-current, not whatever was true on page load.
+      const db = await this.session.fetchCurrentDb();
+      const dbGid = String(db?.db_gid ?? db?.global_id ?? db?.gid ?? '').trim();
+      if (dbGid) {
+        this.orgDraftClientDbGid.set(dbGid);
+      } else {
+        this.orgCreateError.set('Could not determine the active database — switch to a database first, then try again.');
+      }
+    } catch (err: any) {
+      console.error('[StockAccessPanel] failed to fetch current DB for org create:', err);
+      this.orgCreateError.set('Could not determine the active database — switch to a database first, then try again.');
+    } finally {
+      this.orgDraftDbLoading.set(false);
+    }
   }
 
   closeCreateOrg(): void {

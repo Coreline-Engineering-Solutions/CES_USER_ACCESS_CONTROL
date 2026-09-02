@@ -180,7 +180,10 @@
         </div>
         <div class="field">
           <label>Client database ID</label>
-          <input class="inp" [ngModel]="orgDraftClientDbGid()" (ngModelChange)="orgDraftClientDbGid.set($event)" placeholder="client database UUID — the org_id already in use on locations/grants">
+          <input class="inp" readonly disabled
+            [ngModel]="orgDraftDbLoading() ? 'Detecting active database…' : orgDraftClientDbGid()"
+            placeholder="auto-filled from the active database">
+          <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px;line-height:1.4">Auto-filled from the database this session is currently pointed at — this registers a name for <em>that</em> database, not a new one. Switch database (navbar) first if this is the wrong one.</div>
         </div>
       </div>
       <div class="m-f">
