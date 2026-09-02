@@ -36,10 +36,10 @@
     <div class="field-row" style="max-width:520px;align-items:flex-end">
       <div class="field">
         <label>User email</label>
-        @if (session.allUserEmails().length > 0) {
+        @if (dbUsers.users().length > 0) {
           <select class="sel" [ngModel]="lookupEmail()" (ngModelChange)="lookupEmail.set($event)">
             <option value="">— select a user —</option>
-            @for (e of session.allUserEmails(); track e) { <option [value]="e">{{ e }}</option> }
+            @for (u of dbUsers.users(); track u.email) { <option [value]="u.email">{{ u.email }}</option> }
           </select>
         } @else {
           <input class="inp" [ngModel]="lookupEmail()" (ngModelChange)="lookupEmail.set($event)"

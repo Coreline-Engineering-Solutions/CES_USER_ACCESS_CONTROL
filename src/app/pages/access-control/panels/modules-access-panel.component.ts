@@ -3,6 +3,7 @@ import { SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ModulesAccessApiService } from '../../../services/modules-access-api.service';
 import { SessionService } from '../../../session/session.service';
+import { DbUsersService } from '../../../services/db-users.service';
 import { ModuleAccessEntry, ModuleAccessLevel, ModuleSummary, UserModuleAccess } from '../../../services/modules-access.types';
 
 /**
@@ -20,7 +21,8 @@ import { ModuleAccessEntry, ModuleAccessLevel, ModuleSummary, UserModuleAccess }
 })
 export class ModulesAccessPanelComponent implements OnInit {
   private readonly modulesAccess = inject(ModulesAccessApiService);
-  readonly session = inject(SessionService); // template reads session.allUserEmails()
+  private readonly session = inject(SessionService);
+  readonly dbUsers = inject(DbUsersService); // template reads dbUsers.users() for the email dropdown
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -79,7 +81,7 @@ export class ModulesAccessPanelComponent implements OnInit {
 
   ngOnInit(): void {
     void this.load();
-    void this.session.loadAllUserEmails();
+    void this.dbUsers.ensureLoaded();
   }
 
   async load(): Promise<void> {

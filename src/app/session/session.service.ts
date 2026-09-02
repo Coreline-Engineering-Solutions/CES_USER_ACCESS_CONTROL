@@ -289,35 +289,11 @@ export class SessionService {
     }
   }
 
-  /** Normalized, deduped, cached system-wide email directory — for any panel
-   *  that needs a "pick a known user" dropdown but isn't scoped to one org's
-   *  db (GIS role assignment, GIS project-membership lookup, Modules access
-   *  grant). Deliberately NOT what stock-access-panel.component.ts uses for
-   *  its own Grant/Custodian pickers — those need real user_gids merged from
-   *  3 org-scoped sources (see that file's loadUsers() doc comment), not
-   *  just a flat email list. This is the simpler, system-wide-only case. */
-  readonly allUserEmails = signal<string[]>([]);
-  private allUsersLoaded = false;
-  private allUsersInflight: Promise<void> | null = null;
-
-  loadAllUserEmails(): Promise<void> {
-    if (this.allUsersLoaded) return Promise.resolve();
-    if (this.allUsersInflight) return this.allUsersInflight;
-    this.allUsersInflight = this.listAllUsers()
-      .then((raw) => {
-        const emails = new Set<string>();
-        for (const u of raw) {
-          const email = String(typeof u === 'string' ? u : (u?.email ?? u?.user_email ?? u?.userEmail ?? '')).trim();
-          if (email) emails.add(email);
-        }
-        this.allUserEmails.set(Array.from(emails).sort((a, b) => a.localeCompare(b)));
-      })
-      .finally(() => {
-        this.allUsersInflight = null;
-        this.allUsersLoaded = true;
-      });
-    return this.allUsersInflight;
-  }
+  // Note: an earlier version of this had a system-wide allUserEmails()
+  // directory here for panels' email dropdowns. Replaced 2 Sep by
+  // DbUsersService (services/db-users.service.ts) — every dropdown in this
+  // app is meant to offer users linked to the CURRENTLY ACTIVE db, not the
+  // full system-wide list, so that's what lives there now instead.
 
   async fetchCurrentDb(): Promise<any> {
     const sess = this.session();

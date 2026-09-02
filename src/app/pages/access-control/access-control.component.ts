@@ -3,6 +3,7 @@ import { NgComponentOutlet, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RolesApiService } from '../../services/roles-api.service';
 import { SessionService } from '../../session/session.service';
+import { DbUsersService } from '../../services/db-users.service';
 import { ClientPrivilege, ClientRole, UserRoleAssignment } from '../../services/roles.types';
 import { AccessProject, PROJECT_REGISTRY } from './project-registry';
 
@@ -16,7 +17,8 @@ type Tab = 'projects' | 'roles' | 'users';
 })
 export class AccessControlComponent implements OnInit {
   private readonly rolesApi = inject(RolesApiService);
-  readonly session = inject(SessionService); // template reads session.allUserEmails()
+  readonly session = inject(SessionService);
+  readonly dbUsers = inject(DbUsersService); // template reads dbUsers.users() for email dropdowns
 
   readonly activeTab = signal<Tab>('projects');
   readonly loading = signal(true);
@@ -79,7 +81,7 @@ export class AccessControlComponent implements OnInit {
   ngOnInit(): void {
     void this.load();
     void this.session.hasPrivilege('_manage_client_roles').then((v) => this.canManageRoles.set(v));
-    void this.session.loadAllUserEmails();
+    void this.dbUsers.ensureLoaded();
   }
 
   setTab(t: Tab): void {

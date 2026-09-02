@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { GisAccessApiService } from '../../../services/gis-access-api.service';
 import { SessionService } from '../../../session/session.service';
+import { DbUsersService } from '../../../services/db-users.service';
 import { GisProject } from '../../../services/gis-access.types';
 
 /**
@@ -20,7 +21,8 @@ import { GisProject } from '../../../services/gis-access.types';
 })
 export class GisAccessPanelComponent implements OnInit {
   private readonly api = inject(GisAccessApiService);
-  readonly session = inject(SessionService); // template reads session.allUserEmails()
+  private readonly session = inject(SessionService);
+  readonly dbUsers = inject(DbUsersService); // template reads dbUsers.users() for the email dropdown
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -70,7 +72,7 @@ export class GisAccessPanelComponent implements OnInit {
 
   ngOnInit(): void {
     void this.load();
-    void this.session.loadAllUserEmails();
+    void this.dbUsers.ensureLoaded();
   }
 
   async load(): Promise<void> {
