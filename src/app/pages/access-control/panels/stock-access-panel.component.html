@@ -275,6 +275,9 @@
         @if (locDraftType() === 'bootstock') {
           <div class="field">
             <label>Custodian <span class="req" title="Required for bootstock — the person who attests this location's stock. Submitted by email — the backend resolves it to the actual user.">*</span></label>
+            @if (locDraftOrgId()) {
+              <div style="font-size:10.5px;color:var(--gc-text-muted);margin-bottom:4px">Scoped to: <strong>{{ orgName(locDraftOrgId()) }}</strong> only</div>
+            }
             @if (locDraftOrgUsers().length > 0) {
               <select class="sel" [ngModel]="locDraftCustodianUserId()" (ngModelChange)="locDraftCustodianUserId.set($event)">
                 <option value="">— select —</option>
@@ -342,6 +345,11 @@
         }
         <div class="field">
           <label>User</label>
+          @if (grantScope() === 'client') {
+            <div style="font-size:10.5px;color:var(--gc-text-muted);margin-bottom:4px">Scoped to: <strong>every org on file</strong> (whole-client grant)</div>
+          } @else if (grantEffectiveOrgId()) {
+            <div style="font-size:10.5px;color:var(--gc-text-muted);margin-bottom:4px">Scoped to: <strong>{{ orgName(grantEffectiveOrgId()) }}</strong> only</div>
+          }
           @if (usersLoading()) {
             <div class="inp" style="color:var(--gc-text-muted)">Loading users…</div>
           } @else if (grantScope() !== 'client' && !grantEffectiveOrgId()) {

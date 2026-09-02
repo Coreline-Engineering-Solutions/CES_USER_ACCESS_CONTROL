@@ -739,14 +739,28 @@ export class StockAccessPanelComponent implements OnInit {
           let combined: any[] = [...gisList, ...authList];
           if (combined.length === 0) {
             // Neither GIS-side nor the auth-api gid lookup found anyone —
-            // last resort, same one AC itself falls back to: by name.
-            const dbName = dbNameByGid.get(gid) || this.orgName(gid);
-            const byName = await this.session.checkDatabaseUsers(dbName).catch((err) => {
-              row.nameFallback = `"${dbName}" -> error: ${err?.message ?? err}`;
-              return [] as any[];
-            });
-            combined = Array.isArray(byName) ? byName : [];
-            if (!row.nameFallback) row.nameFallback = `"${dbName}" -> ${combined.length}`;
+            // last resort, by name, but ONLY when this gid is a CONFIRMED
+            // real database (present in session.databases()). Found live
+            // 2 Sep: the previous `|| this.orgName(gid)` fallback sent this
+            // org's own Stock-side display LABEL to the name lookup whenever
+            // its client_db_gid wasn't a database session.databases()
+            // actually recognises — an unverified label has no guarantee of
+            // matching only (or even loosely) the right database
+            // server-side, and is the most plausible way a Custodian/Grant
+            // picker for one specific org could end up showing people who
+            // have nothing to do with it. Skip the lookup entirely in that
+            // case instead of risking it.
+            const dbName = dbNameByGid.get(gid);
+            if (dbName) {
+              const byName = await this.session.checkDatabaseUsers(dbName).catch((err) => {
+                row.nameFallback = `"${dbName}" -> error: ${err?.message ?? err}`;
+                return [] as any[];
+              });
+              combined = Array.isArray(byName) ? byName : [];
+              if (!row.nameFallback) row.nameFallback = `"${dbName}" -> ${combined.length}`;
+            } else {
+              row.nameFallback = `skipped — "${gid}" is not a database session.databases() recognises (org label "${this.orgName(gid)}" is not a verified database name)`;
+            }
           }
           return combined;
         }),
