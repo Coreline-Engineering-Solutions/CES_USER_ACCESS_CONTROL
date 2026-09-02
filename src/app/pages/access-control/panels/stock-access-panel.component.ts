@@ -68,6 +68,35 @@ export class StockAccessPanelComponent implements OnInit {
    *  while loading. Shown next to usersDebug's per-org breakdown. */
   readonly usersDebugGlobal = signal<string>('?');
 
+  // ─── GIS projects (stockpile location's project field) ──────────────────
+  // Same GIS API, same /admin/projects/all endpoint, same shape Stock
+  // Manager's ReferenceDataService.loadProjects()/pickableProjects() use —
+  // ported here so the New location modal's stockpile Project field can be
+  // a real dropdown instead of a manual UUID paste.
+  readonly projects = signal<{ global_id: string; name: string }[]>([]);
+  /** Only entries with a resolved UUID are selectable — the stock backend
+   *  rejects the legacy numeric project_id. Sorted by name. */
+  readonly pickableProjects = computed(() =>
+    this.projects()
+      .filter((p) => p.global_id.length > 0 && p.name.length > 0)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  );
+
+  private async loadProjects(): Promise<void> {
+    try {
+      const res = await this.stockAccess.projectsAll();
+      const raw = (res as any)?.project_list ?? (res as any)?.projects ?? [];
+      const list = (Array.isArray(raw) ? raw : []).map((p: any) => ({
+        global_id: String(p?.global_id ?? p?.project_gid ?? '').trim(),
+        name: String(p?.project_name ?? p?.name ?? '').trim(),
+      }));
+      this.projects.set(list);
+    } catch (err) {
+      console.warn('[StockAccessPanel] projects lookup failed:', err);
+    }
+  }
+
   // ─── Filter/sort over the grants table ──────────────────────────────────
   // With multiple orgs each holding a handful of users at various levels,
   // scrolling a flat table is the failure mode; the same filter-bar pattern
@@ -479,6 +508,7 @@ export class StockAccessPanelComponent implements OnInit {
       // had passed by then for realOrgs() to have already resolved.
       await this.loadRealOrgs();
       void this.loadUsers();
+      void this.loadProjects();
     } catch (err: any) {
       console.error('[StockAccessPanel] load failed:', err);
       this.error.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to load stock access data');

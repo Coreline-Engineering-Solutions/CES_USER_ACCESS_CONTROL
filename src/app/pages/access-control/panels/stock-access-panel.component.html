@@ -238,8 +238,15 @@
         @if (locDraftType() === 'stockpile') {
           <div class="field">
             <label>Project <span class="req" title="Required for stockpiles — the GIS project this stockpile belongs to.">*</span></label>
-            <input class="inp" [ngModel]="locDraftProjectId()" (ngModelChange)="locDraftProjectId.set($event)" placeholder="project UUID">
-            <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">No GIS project directory in this app — paste the project's UUID from GIS.</div>
+            @if (pickableProjects().length > 0) {
+              <select class="sel" [ngModel]="locDraftProjectId()" (ngModelChange)="locDraftProjectId.set($event)">
+                <option value="">— select a project —</option>
+                @for (p of pickableProjects(); track p.global_id) { <option [value]="p.global_id">{{ p.name }}</option> }
+              </select>
+            } @else {
+              <input class="inp" [ngModel]="locDraftProjectId()" (ngModelChange)="locDraftProjectId.set($event)" placeholder="project UUID">
+              <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">No projects found for this account — paste the project's UUID from GIS, or check GIS project access is granted.</div>
+            }
           </div>
         }
 

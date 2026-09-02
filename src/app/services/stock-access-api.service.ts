@@ -107,4 +107,13 @@ export class StockAccessApiService {
   orgsList() {
     return this.post<{ response: string; orgs: OrgRow[] }>('/stock/orgs/list', {});
   }
+
+  /** GIS projects (same GIS API, same endpoint Stock Manager's
+   *  ReferenceDataService.loadProjects() uses) — candidate source for a
+   *  stockpile location's project_id. Each entry carries a `global_id`
+   *  (UUID) alongside the legacy numeric `project_id`; the UUID is what
+   *  stock.locations.project_id actually stores. */
+  projectsAll() {
+    return this.post<{ response: string; project_list: any[] }>('/admin/projects/all', {});
+  }
 }
