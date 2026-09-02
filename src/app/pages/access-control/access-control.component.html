@@ -6,9 +6,9 @@
 
   <div class="subtabs" role="tablist">
     <button class="subtab" [class.on]="activeTab() === 'projects'" (click)="setTab('projects')">Projects</button>
+    <button class="subtab" [class.on]="activeTab() === 'directory'" (click)="setTab('directory')">All access</button>
     <button class="subtab" [class.on]="activeTab() === 'roles'" (click)="setTab('roles')">Client roles</button>
     <button class="subtab" [class.on]="activeTab() === 'users'" (click)="setTab('users')">User assignments</button>
-    <button class="subtab" [class.on]="activeTab() === 'directory'" (click)="setTab('directory')">User directory</button>
   </div>
 
   @if (activeTab() === 'directory') {
