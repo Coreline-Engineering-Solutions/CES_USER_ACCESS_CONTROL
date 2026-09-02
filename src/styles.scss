@@ -225,6 +225,24 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 }
 .section-line { flex: 1; min-width: 24px; height: 1px; background: var(--gc-border); }
 
+/* Sub-section headings inside the user-directory detail modal — same look
+   as .section-h h3 but standalone (no flex row / section-line), since each
+   one sits directly above its own table rather than a page-level header. */
+.dsec {
+  font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--gc-text-muted); font-weight: 600; margin: 18px 0 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.dsec:first-child { margin-top: 0; }
+.dsec .count {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14); color: var(--gc-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.dnote {
+  font-size: 11.5px; color: var(--gc-text-muted); margin: 0 0 10px; line-height: 1.5;
+}
+
 /* Toggled-on org card in the Stock access panel — subtle highlight so the
    currently-filtered org reads as a live selection, not just a click. */
 .lcard.active {

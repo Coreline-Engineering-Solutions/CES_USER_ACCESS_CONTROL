@@ -6,13 +6,14 @@ import { SessionService } from '../../session/session.service';
 import { DbUsersService } from '../../services/db-users.service';
 import { ClientPrivilege, ClientRole, UserRoleAssignment } from '../../services/roles.types';
 import { AccessProject, PROJECT_REGISTRY } from './project-registry';
+import { UserDirectoryPanelComponent } from './panels/user-directory-panel.component';
 
-type Tab = 'projects' | 'roles' | 'users';
+type Tab = 'projects' | 'roles' | 'users' | 'directory';
 
 @Component({
   selector: 'app-access-control',
   standalone: true,
-  imports: [FormsModule, SlicePipe, NgComponentOutlet],
+  imports: [FormsModule, SlicePipe, NgComponentOutlet, UserDirectoryPanelComponent],
   templateUrl: './access-control.component.html',
 })
 export class AccessControlComponent implements OnInit {

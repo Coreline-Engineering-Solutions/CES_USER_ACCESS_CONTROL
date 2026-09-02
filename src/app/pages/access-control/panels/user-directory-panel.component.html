@@ -1,0 +1,164 @@
+<div class="hiernote">
+  <span class="i">i</span>
+  <span>Every user linked to the active database, in one place. Click a user to see every role, grant, and access level they hold across Stock, GIS projects, Modules, and client roles — and revoke any of it right there.</span>
+</div>
+
+@if (error()) {
+  <div class="hiernote warn"><span class="i">!</span><span>{{ error() }}</span></div>
+}
+
+@if (loading() || dbUsers.loading()) {
+  <div style="padding:24px 18px;color:var(--gc-text-muted)">Loading…</div>
+} @else {
+  <div class="section-h">
+    <h3>Users on this database <span class="count">{{ filteredUsers().length }} / {{ dbUsers.users().length }}</span></h3>
+    <span class="section-line"></span>
+  </div>
+
+  <div class="filterbar">
+    <div class="fgroup grow">
+      <label>Search</label>
+      <input class="inp" [ngModel]="search()" (ngModelChange)="search.set($event)" placeholder="Email…">
+    </div>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Email</th><th class="actions">Info</th></tr></thead>
+      <tbody>
+        @for (u of filteredUsers(); track u.email) {
+          <tr>
+            <td>{{ u.email }}</td>
+            <td class="actions"><button class="btn primary" (click)="openDetail(u)">Info</button></td>
+          </tr>
+        } @empty {
+          <tr><td colspan="2" style="color:var(--gc-text-muted)">
+            {{ search().trim() ? 'No users match "' + search() + '".' : 'No users linked to this database yet.' }}
+          </td></tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+<!-- User detail — every role/grant/access level they hold, revocable -->
+@if (detailUser(); as u) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="User access detail">
+    <div class="modal" style="width:720px;max-width:calc(100vw - 32px)">
+      <div class="m-h">
+        <h3>{{ u.email }}</h3>
+        <button class="x" (click)="closeDetail()" aria-label="Close">✕</button>
+      </div>
+      <div class="m-sec" style="max-height:70vh;overflow-y:auto">
+        @if (detailError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ detailError() }}</span></div> }
+
+        @if (detailLoading()) {
+          <div style="padding:12px 0;color:var(--gc-text-muted)">Loading this user's access…</div>
+        } @else {
+          <!-- Stock access -->
+          <h4 class="dsec">Stock access <span class="count">{{ detailStockGrants().length }}</span></h4>
+          @if (!detailHasResolvedId()) {
+            <p class="dnote">No resolved user ID for this person yet — Stock grants are keyed by ID, not email, so this can't be matched until they show up in a GIS-side lookup.</p>
+          } @else {
+            <div class="tablewrap" style="margin:0 0 16px">
+              <table>
+                <thead><tr><th>Scope</th><th>Location / Organisation</th><th>Role</th><th class="actions">Action</th></tr></thead>
+                <tbody>
+                  @for (g of detailStockGrants(); track g.global_id) {
+                    <tr>
+                      <td>{{ g.scope }}</td>
+                      <td>{{ g.scope === 'location' ? locationName(g.location_id) : (g.scope === 'org' ? orgName(g.org_id) : 'all locations') }}</td>
+                      <td><span class="pill" [class]="'role-' + g.role">{{ g.role }}</span></td>
+                      <td class="actions">
+                        <button class="btn" [disabled]="revokingKey() === 'stock:' + g.global_id" (click)="revokeStockGrant(g)">
+                          {{ revokingKey() === 'stock:' + g.global_id ? 'Revoking…' : 'Revoke' }}
+                        </button>
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="4" style="color:var(--gc-text-muted)">No Stock access.</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+
+          <!-- GIS projects -->
+          <h4 class="dsec">GIS projects <span class="count">{{ detailGisProjects().length }}</span></h4>
+          <div class="tablewrap" style="margin:0 0 16px">
+            <table>
+              <thead><tr><th>Project</th><th>Description</th><th class="actions">Action</th></tr></thead>
+              <tbody>
+                @for (p of detailGisProjects(); track p.name) {
+                  <tr>
+                    <td>{{ p.name }}</td>
+                    <td class="num">{{ p.description || '—' }}</td>
+                    <td class="actions">
+                      <button class="btn" [disabled]="revokingKey() === 'gis:' + p.name" (click)="removeGisProject(p)">
+                        {{ revokingKey() === 'gis:' + p.name ? 'Removing…' : 'Remove' }}
+                      </button>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="3" style="color:var(--gc-text-muted)">No GIS projects assigned.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Modules -->
+          <h4 class="dsec">Modules access <span class="count">{{ detailModuleAccess().length }}</span></h4>
+          @if (detailModulesLimited()) {
+            <p class="dnote">You're not a GIS System Manager — this list only covers modules you personally manage. A System Manager sees every module here.</p>
+          }
+          <div class="tablewrap" style="margin:0 0 16px">
+            <table>
+              <thead><tr><th>Module</th><th>Access level</th><th class="actions">Action</th></tr></thead>
+              <tbody>
+                @for (m of detailModuleAccess(); track m.module_gid) {
+                  <tr>
+                    <td>{{ m.module_name }}</td>
+                    <td><span class="pill">{{ m.access_level }}</span></td>
+                    <td class="actions">
+                      <button class="btn" [disabled]="revokingKey() === 'mod:' + m.module_gid" (click)="revokeModuleAccess(m)">
+                        {{ revokingKey() === 'mod:' + m.module_gid ? 'Revoking…' : 'Revoke' }}
+                      </button>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="3" style="color:var(--gc-text-muted)">No Modules access{{ detailModulesLimited() ? ' among the modules you manage' : '' }}.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Client roles -->
+          <h4 class="dsec">Client roles <span class="count">{{ detailClientRoles().length }}</span></h4>
+          <div class="tablewrap" style="margin:0">
+            <table>
+              <thead><tr><th>Role</th><th>Assigned by</th><th class="actions">Action</th></tr></thead>
+              <tbody>
+                @for (a of detailClientRoles(); track a.role_gid) {
+                  <tr>
+                    <td>{{ a.role_name }}</td>
+                    <td class="num">{{ a.assigned_by }}</td>
+                    <td class="actions">
+                      <button class="btn" [disabled]="revokingKey() === 'role:' + a.role_gid" (click)="revokeClientRole(a)">
+                        {{ revokingKey() === 'role:' + a.role_gid ? 'Revoking…' : 'Revoke' }}
+                      </button>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="3" style="color:var(--gc-text-muted)">No client roles.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+      <div class="m-f">
+        <button class="btn" (click)="closeDetail()">Close</button>
+      </div>
+    </div>
+  </div>
+}
