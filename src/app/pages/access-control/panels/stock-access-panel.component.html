@@ -250,8 +250,17 @@
             @if (pickableProjects().length > 0) {
               <select class="sel" [ngModel]="locDraftProjectId()" (ngModelChange)="locDraftProjectId.set($event)">
                 <option value="">— select a project —</option>
-                @for (p of pickableProjects(); track pickableProjectId(p)) { <option [value]="pickableProjectId(p)">{{ p.name }}</option> }
+                @for (p of pickableProjects(); track pickableProjectId(p)) {
+                  <option [value]="pickableProjectId(p)" [disabled]="!hasRealProjectId(p)">
+                    {{ p.name }}{{ hasRealProjectId(p) ? '' : ' — not migrated yet' }}
+                  </option>
+                }
               </select>
+              @if (!pickableProjects().some(hasRealProjectId)) {
+                <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">
+                  None of these projects have a usable ID yet — ask backend to run the admin.projects.global_id backfill for this account before a stockpile can be created.
+                </div>
+              }
             } @else {
               <input class="inp" [ngModel]="locDraftProjectId()" (ngModelChange)="locDraftProjectId.set($event)" placeholder="project UUID">
               <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">

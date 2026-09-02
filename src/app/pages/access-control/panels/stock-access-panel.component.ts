@@ -117,9 +117,23 @@ export class StockAccessPanelComponent implements OnInit {
 
   /** The value to actually submit/track for a project row — prefer the real
    *  UUID, fall back to the legacy numeric id (stringified) when the backend
-   *  hasn't backfilled global_id for this project yet. */
+   *  hasn't backfilled global_id for this project yet.
+   *
+   *  The numeric fallback is DISPLAY/DEDUP only — confirmed live 2 Sep,
+   *  submitting it as stock.locations.project_id throws a raw Postgres
+   *  error server-side ("invalid UUID '5': length must be between 32..36
+   *  characters, got 1"). Every caller that SUBMITS this value must gate on
+   *  hasRealProjectId() first — see the Project field guard in
+   *  submitCreateLocation(). Mirrors CES_STOCK_MANAGER's identical fix, keep
+   *  the two in sync. */
   pickableProjectId(p: { global_id: string; project_id: number }): string {
     return p.global_id || String(p.project_id);
+  }
+
+  /** True when a project row carries a real UUID and is therefore actually
+   *  submittable — see pickableProjectId()'s doc comment. */
+  hasRealProjectId(p: { global_id: string; project_id: number }): boolean {
+    return StockAccessPanelComponent.UUID_RE.test(p.global_id);
   }
 
   /** Raw-vs-pickable breakdown for /admin/projects/all, shown in the New
@@ -457,9 +471,24 @@ export class StockAccessPanelComponent implements OnInit {
       this.locCreateError.set('Name and organisation are both required.');
       return;
     }
-    if (type === 'stockpile' && !this.locDraftProjectId().trim()) {
-      this.locCreateError.set('Stockpiles require a project.');
-      return;
+    if (type === 'stockpile') {
+      const pid = this.locDraftProjectId().trim();
+      if (!pid) {
+        this.locCreateError.set('Stockpiles require a project.');
+        return;
+      }
+      // Defence-in-depth: the dropdown already disables options without a
+      // real UUID (see the template), but guard the submit too — see
+      // pickableProjectId()'s doc comment for why the numeric fallback can
+      // never be sent to the server.
+      const proj = this.pickableProjects().find((p) => this.pickableProjectId(p) === pid);
+      if (proj && !this.hasRealProjectId(proj)) {
+        this.locCreateError.set(
+          `"${proj.name}" hasn't been migrated to the new project ID system yet — ask backend to run the ` +
+          'admin.projects.global_id backfill for this project before creating a stockpile against it.',
+        );
+        return;
+      }
     }
     if (type === 'bootstock' && !this.locDraftCustodianUserId().trim()) {
       this.locCreateError.set('Bootstock requires a custodian user.');
