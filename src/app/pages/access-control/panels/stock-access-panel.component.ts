@@ -465,8 +465,17 @@ export class StockAccessPanelComponent implements OnInit {
       ]);
       this.locations.set(locRes?.locations ?? []);
       this.grants.set(grantRes?.access ?? []);
+      // loadRealOrgs() MUST resolve before loadUsers() runs — loadUsers()
+      // reads orgs(), which is seeded from realOrgs(). Firing both
+      // unawaited in parallel (the previous code) was the actual bug behind
+      // "the picker's empty on open but Refresh fixes it": realOrgs() is []
+      // until its own fetch resolves, so on first load orgs() was still
+      // empty when loadUsers() read it, orgIds ended up [], and the whole
+      // lookup bailed out via its own early return before ever calling any
+      // of the three sources — Refresh worked purely because enough time
+      // had passed by then for realOrgs() to have already resolved.
+      await this.loadRealOrgs();
       void this.loadUsers();
-      void this.loadRealOrgs();
     } catch (err: any) {
       console.error('[StockAccessPanel] load failed:', err);
       this.error.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to load stock access data');
