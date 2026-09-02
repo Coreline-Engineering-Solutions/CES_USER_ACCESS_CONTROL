@@ -192,6 +192,60 @@ export class SessionService {
     }
   }
 
+  /**
+   * Which user accounts are actually linked/granted to a database — the
+   * authoritative source CES_ACCESS_CONTROL's databases-page already uses
+   * (user-session.ts's dbUsersList, same AUTH_API, same
+   * `/auth/db/users/list` endpoint), ported here because the Stock Access
+   * panel's own GIS-side lookup (StockAccessApiService.dbUsersList, hitting
+   * `/admin/db-users` on the GIS API) was coming back empty for at least
+   * one real org/database, leaving the Grant access modal with no one to
+   * grant. Central-auth db-user linkage and GIS-side db-user linkage are
+   * evidently not the same list — this is the one AC's own working "who's
+   * linked to this db" screen relies on.
+   */
+  async dbUsersList(db_gid: string): Promise<any[]> {
+    const sess = this.session();
+    if (!sess || !db_gid) return [];
+    try {
+      const res = await fetch(`${this.AUTH_API}/auth/db/users/list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_gid: sess.session_gid, db_gid }),
+      });
+      const data = await res.json();
+      const list = data?.emails ?? data?.email_list ?? data?.users ?? data;
+      return Array.isArray(list) ? list : [];
+    } catch (err) {
+      console.error('[Session] dbUsersList failed:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Name-based fallback for the same "who's linked to this db" question —
+   * AC's databases-page tries this when the gid-based lookup above throws
+   * or the database has no gid yet. Needs the database's actual name (from
+   * databases()/fetchDatabases(), NOT an org's UAC-side registered label —
+   * those are different strings for the same database).
+   */
+  async checkDatabaseUsers(database: string): Promise<any[]> {
+    const sess = this.session();
+    if (!sess || !database) return [];
+    try {
+      const res = await fetch(`${this.AUTH_API}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ function: '_check_database_users', session_gid: sess.session_gid, database }),
+      });
+      const data = await res.json();
+      return typeof data?.response === 'string' && data.response.startsWith('_S') ? (data.emails ?? []) : [];
+    } catch (err) {
+      console.error('[Session] checkDatabaseUsers failed:', err);
+      return [];
+    }
+  }
+
   async fetchCurrentDb(): Promise<any> {
     const sess = this.session();
     if (!sess) return null;

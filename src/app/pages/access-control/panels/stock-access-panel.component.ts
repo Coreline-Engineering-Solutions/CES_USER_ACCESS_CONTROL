@@ -277,6 +277,10 @@ export class StockAccessPanelComponent implements OnInit {
       await this.stockAccess.orgCreate({ name, client_db_gid: clientDbGid });
       this.showCreateOrgModal.set(false);
       await this.loadRealOrgs();
+      // A brand-new org has no locations yet, but its /admin/db-users
+      // directory can already have people in it — refresh so the Grant
+      // modal doesn't show "no users" for an org that was JUST registered.
+      void this.loadUsers();
     } catch (err: any) {
       console.error('[StockAccessPanel] org create failed:', err);
       this.orgCreateError.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to create organisation');
@@ -381,6 +385,14 @@ export class StockAccessPanelComponent implements OnInit {
   readonly granting = signal(false);
   readonly grantError = signal<string | null>(null);
   readonly grantUserId = signal('');
+  /** Toggles the User field between the picker and a manual UUID input —
+   *  loadUsers() now merges three sources (see its own doc comment) to
+   *  cover the case that motivated this in the first place, but a
+   *  brand-new org/database's user directory may still not be synced yet
+   *  (or the target user just isn't in it), and there was previously no
+   *  way to grant access at all when that happened — the picker's empty
+   *  state was a dead end. */
+  readonly grantUserManualEntry = signal(false);
   /** Multi-select — a user can hold several roles on the same scope (e.g.
    *  Operator + Auditor on one location), and forcing one grant per modal
    *  visit meant re-opening this dialog for every extra role. */
@@ -448,36 +460,98 @@ export class StockAccessPanelComponent implements OnInit {
   }
 
   /**
-   * Real, pickable users — one `/admin/db-users` call per org_id currently
-   * in use (org_id == client database gid today), merged and de-duped, so
-   * the grant form offers an actual "who is this" list instead of asking
-   * an admin to type a UUID by hand. Best-effort per org: one failing org
-   * doesn't block the others.
+   * Real, pickable users, per org_id currently in use (org_id == client
+   * database gid today), merged and de-duped, so the grant form offers an
+   * actual "who is this" list instead of asking an admin to type a UUID by
+   * hand. Best-effort per org: one failing/empty org doesn't block others.
+   *
+   * Three sources, in priority order — confirmed live that the first alone
+   * can come back empty for a real, populated database while the others
+   * have the actual answer:
+   *  1. StockAccessApiService.dbUsersList — GIS API's /admin/db-users.
+   *  2. session.dbUsersList — central AUTH_API's /auth/db/users/list, the
+   *     same call CES_ACCESS_CONTROL's databases-page uses as ITS primary
+   *     "who's linked to this db" source (user-session.ts, same AUTH_API).
+   *  3. session.checkDatabaseUsers — AC's own fallback for when #2 has
+   *     nothing either, keyed by the database's real name (not this org's
+   *     UAC-side label) resolved from session.databases() by gid.
+   * AC's own downstream code only ever reads .email off these results —
+   * never a gid — so unlike source #1 (which is a real GIS user object with
+   * a user_gid), #2/#3 may only carry emails. Entries with no resolvable
+   * gid keep the email itself as their id: locationAccessGrant's user_id
+   * field already accepts an admin-typed arbitrary string via the existing
+   * manual-entry fallback, so this isn't a new kind of value for it to see.
    */
   private async loadUsers(): Promise<void> {
     const orgIds = this.orgs().map((o) => o.org_id).filter(Boolean);
     if (orgIds.length === 0) return;
     this.usersLoading.set(true);
     try {
-      const lists = await Promise.all(
-        orgIds.map((gid) =>
-          this.stockAccess.dbUsersList(gid).catch((err) => {
-            console.warn('[StockAccessPanel] users lookup failed for org', gid, err);
-            return null;
-          }),
-        ),
+      const dbNameByGid = new Map<string, string>(
+        this.session.databases()
+          .map((db: any): [string, string] => [
+            String(db?.db_gid ?? db?.global_id ?? db?.gid ?? '').trim(),
+            String(db?.name ?? db?.db_name ?? db?.description ?? '').trim(),
+          ])
+          .filter(([gid]) => !!gid),
       );
-      const byGid = new Map<string, StockUserRef>();
-      for (const res of lists) {
-        const list = res?.users ?? res?.emails ?? res?.email_list ?? res?.user_list ?? res?.data ?? res;
+
+      const perOrgLists = await Promise.all(
+        orgIds.map(async (gid) => {
+          const [gisRes, authRes] = await Promise.all([
+            this.stockAccess.dbUsersList(gid).catch((err) => {
+              console.warn('[StockAccessPanel] GIS users lookup failed for org', gid, err);
+              return null;
+            }),
+            this.session.dbUsersList(gid).catch((err) => {
+              console.warn('[StockAccessPanel] auth-api users lookup failed for org', gid, err);
+              return [] as any[];
+            }),
+          ]);
+          const gisListRaw = gisRes?.users ?? gisRes?.emails ?? gisRes?.email_list ?? gisRes?.user_list ?? gisRes?.data ?? gisRes;
+          const gisList: any[] = Array.isArray(gisListRaw) ? gisListRaw : [];
+          const authList: any[] = Array.isArray(authRes) ? authRes : [];
+          let combined: any[] = [...gisList, ...authList];
+          if (combined.length === 0) {
+            // Neither GIS-side nor the auth-api gid lookup found anyone —
+            // last resort, same one AC itself falls back to: by name.
+            const dbName = dbNameByGid.get(gid) || this.orgName(gid);
+            const byName = await this.session.checkDatabaseUsers(dbName).catch(() => [] as any[]);
+            combined = Array.isArray(byName) ? byName : [];
+          }
+          return combined;
+        }),
+      );
+
+      // Deduped by EMAIL (case-insensitive), not by id — the same person can
+      // legitimately show up from more than one source with different id
+      // shapes (a real gid from the GIS list, email-as-id from the auth-api
+      // one), and deduping by id would show them twice under two values
+      // instead of once. A real gid always wins over an email-fallback id
+      // if we see both for the same person.
+      const byEmail = new Map<string, StockUserRef>();
+      for (const list of perOrgLists) {
         if (!Array.isArray(list)) continue;
         for (const u of list) {
-          const user_gid = String(typeof u === 'string' ? '' : (u?.user_gid ?? u?.gid ?? '')).trim();
-          const email = String(typeof u === 'string' ? u : (u?.email ?? u?.user_email ?? '')).trim();
-          if (email && user_gid) byGid.set(user_gid, { user_gid, email });
+          const isStr = typeof u === 'string';
+          const email = String(isStr ? u : (u?.email ?? u?.user_email ?? '')).trim();
+          const realId = String(isStr ? '' : (u?.user_gid ?? u?.gid ?? u?.user_id ?? u?.id ?? '')).trim();
+          if (!email) continue;
+          const key = email.toLowerCase();
+          const existing = byEmail.get(key);
+          // No real id available — fall back to the email itself so the
+          // entry still shows up and is still selectable, rather than
+          // being silently dropped (the old behavior, and the actual bug).
+          // Only overwrite an existing entry if this one has a real id and
+          // the existing one didn't (i.e. never downgrade a known gid).
+          if (!existing) {
+            byEmail.set(key, { user_gid: realId || email, email });
+          } else if (realId && existing.user_gid === existing.email) {
+            byEmail.set(key, { user_gid: realId, email });
+          }
         }
       }
-      this.users.set(Array.from(byGid.values()).sort((a, b) => a.email.localeCompare(b.email)));
+      this.users.set(Array.from(byEmail.values()).sort((a, b) => a.email.localeCompare(b.email)));
     } finally {
       this.usersLoading.set(false);
     }
@@ -502,12 +576,20 @@ export class StockAccessPanelComponent implements OnInit {
 
   openGrant(orgId?: string): void {
     this.grantUserId.set('');
+    this.grantUserManualEntry.set(false);
     this.grantRoles.set(new Set());
     this.grantScope.set(orgId ? 'org' : 'location');
     this.grantLocationId.set('');
     this.grantOrgId.set(orgId ?? '');
     this.grantError.set(null);
     this.showGrantModal.set(true);
+  }
+
+  /** "Refresh" button on the Grant modal's empty-user-list state — re-runs
+   *  loadUsers() without a full page reload, for right after registering
+   *  an org/location whose user directory hadn't synced yet. */
+  async refreshUsers(): Promise<void> {
+    await this.loadUsers();
   }
 
   closeGrant(): void {
