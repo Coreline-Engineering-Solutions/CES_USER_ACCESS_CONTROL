@@ -487,6 +487,13 @@ export class StockAccessPanelComponent implements OnInit {
     if (orgIds.length === 0) return;
     this.usersLoading.set(true);
     try {
+      // The name-based fallback below needs the database's real name, not
+      // this app's own org label — session.databases() is what has that,
+      // but it's only populated by the navbar's own independent ngOnInit.
+      // Don't trust that race; fetch it ourselves if it hasn't landed yet.
+      if (this.session.databases().length === 0) {
+        await this.session.fetchDatabases().catch(() => {});
+      }
       const dbNameByGid = new Map<string, string>(
         this.session.databases()
           .map((db: any): [string, string] => [
@@ -511,6 +518,7 @@ export class StockAccessPanelComponent implements OnInit {
           const gisListRaw = gisRes?.users ?? gisRes?.emails ?? gisRes?.email_list ?? gisRes?.user_list ?? gisRes?.data ?? gisRes;
           const gisList: any[] = Array.isArray(gisListRaw) ? gisListRaw : [];
           const authList: any[] = Array.isArray(authRes) ? authRes : [];
+          console.info('[StockAccessPanel] loadUsers org', gid, '- GIS:', gisList.length, 'auth-api gid:', authList.length); // temporary, see session.dbUsersList
           let combined: any[] = [...gisList, ...authList];
           if (combined.length === 0) {
             // Neither GIS-side nor the auth-api gid lookup found anyone —
@@ -518,6 +526,7 @@ export class StockAccessPanelComponent implements OnInit {
             const dbName = dbNameByGid.get(gid) || this.orgName(gid);
             const byName = await this.session.checkDatabaseUsers(dbName).catch(() => [] as any[]);
             combined = Array.isArray(byName) ? byName : [];
+            console.info('[StockAccessPanel] loadUsers org', gid, 'fell back to name lookup "' + dbName + '" ->', combined.length);
           }
           return combined;
         }),
