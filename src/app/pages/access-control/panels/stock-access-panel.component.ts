@@ -191,8 +191,19 @@ export class StockAccessPanelComponent implements OnInit {
     return Array.from(seen);
   }
 
+  /** Seeded from the real org directory FIRST, then location counts are
+   *  overlaid on top — not built from locations() alone. A freshly
+   *  registered org has zero locations yet, so building this from
+   *  locations() only meant "Register org" appeared to silently do
+   *  nothing: the org was created (confirmed live in realOrgs()/orgName())
+   *  but never listed here until its first location showed up. realOrgs()
+   *  is populated by loadRealOrgs(), which submitCreateOrg() already
+   *  re-runs after a successful create, so this updates immediately. */
   readonly orgs = computed(() => {
     const map = new Map<string, { org_id: string; count: number; types: Set<string> }>();
+    for (const o of this.realOrgs()) {
+      map.set(o.client_db_gid, { org_id: o.client_db_gid, count: 0, types: new Set<string>() });
+    }
     for (const l of this.locations()) {
       const e = map.get(l.org_id) ?? { org_id: l.org_id, count: 0, types: new Set<string>() };
       e.count += 1;
