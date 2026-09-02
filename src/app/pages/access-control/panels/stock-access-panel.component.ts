@@ -568,6 +568,40 @@ export class StockAccessPanelComponent implements OnInit {
   readonly grantLocationId = signal('');
   readonly grantOrgId = signal('');
 
+  /** The ONE org relevant to the grant currently being set up — 'org' scope
+   *  uses grantOrgId directly, 'location' scope derives it from the
+   *  selected location's own org_id. 'client' scope has no single org by
+   *  definition (a client-wide grant is explicitly cross-org), so this
+   *  returns '' for it — grantPickableUsers() below handles that case
+   *  separately. */
+  readonly grantEffectiveOrgId = computed<string>(() => {
+    const scope = this.grantScope();
+    if (scope === 'org') return this.grantOrgId().trim();
+    if (scope === 'location') {
+      const loc = this.locations().find((l) => l.global_id === this.grantLocationId());
+      return loc?.org_id ?? '';
+    }
+    return '';
+  });
+
+  /** Grant's actual User picker source. Found live 2 Sep: dbLinkedUsers()
+   *  (a union of EVERY org's users) doesn't fix "showing all users" for
+   *  Stock the way it does for GIS/Modules' single-active-db dropdowns —
+   *  this admin surface manages several client orgs from one session by
+   *  design, so unioning every org's list back together just reassembles
+   *  the same "everyone" problem from a different pipe. This scopes to the
+   *  ONE org the grant is actually for, exactly like locDraftOrgUsers()
+   *  already does for the Custodian field — 'client' scope is the one
+   *  legitimately cross-org case (falls back to dbLinkedUsers(), still
+   *  bounded to orgs this admin can act on, never the true system-wide
+   *  listAllUsers() directory). */
+  readonly grantPickableUsers = computed<StockUserRef[]>(() => {
+    if (this.grantScope() === 'client') return this.pickableUsers();
+    const orgId = this.grantEffectiveOrgId();
+    if (!orgId) return [];
+    return (this.usersByOrg().get(orgId) ?? []).filter((u) => StockAccessPanelComponent.UUID_RE.test(u.user_gid));
+  });
+
   /** Roles the target user already holds for the *exact* scope being edited
    *  — live over grantUserId/grantScope/grantLocationId/grantOrgId so the
    *  modal updates as those change. Used to grey out roles that would

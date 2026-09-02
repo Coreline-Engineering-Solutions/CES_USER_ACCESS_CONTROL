@@ -310,17 +310,52 @@
       </div>
       <div class="m-sec">
         @if (grantError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ grantError() }}</span></div> }
+        <!-- Scope/target comes FIRST now — 2 Sep: the User picker below is
+             scoped to whichever org this grant is actually for (never a
+             blanket cross-org list), so it needs to already know the target
+             before it has anyone to offer. -->
+        <div class="field">
+          <label>Scope</label>
+          <div class="urgency-toggle">
+            <button type="button" [class.on]="grantScope() === 'location'" (click)="grantScope.set('location')">Location</button>
+            <button type="button" [class.on]="grantScope() === 'org'" (click)="grantScope.set('org')">Organisation</button>
+            <button type="button" [class.on]="grantScope() === 'client'" (click)="grantScope.set('client')">Whole client</button>
+          </div>
+        </div>
+        @if (grantScope() === 'location') {
+          <div class="field">
+            <label>Location</label>
+            <select class="sel" [ngModel]="grantLocationId()" (ngModelChange)="grantLocationId.set($event)">
+              <option value="">— select —</option>
+              @for (loc of locations(); track loc.global_id) { <option [value]="loc.global_id">{{ loc.name }}</option> }
+            </select>
+          </div>
+        }
+        @if (grantScope() === 'org') {
+          <div class="field">
+            <label>Organisation</label>
+            <select class="sel" [ngModel]="grantOrgId()" (ngModelChange)="grantOrgId.set($event)">
+              <option value="">— select —</option>
+              @for (org of orgs(); track org.org_id) { <option [value]="org.org_id">{{ orgName(org.org_id) }}</option> }
+            </select>
+          </div>
+        }
         <div class="field">
           <label>User</label>
           @if (usersLoading()) {
             <div class="inp" style="color:var(--gc-text-muted)">Loading users…</div>
-          } @else if (pickableUsers().length > 0) {
+          } @else if (grantScope() !== 'client' && !grantEffectiveOrgId()) {
+            <div class="hiernote" style="margin:0 0 8px">
+              <span class="i">i</span>
+              <span>Pick a {{ grantScope() === 'location' ? 'location' : 'organisation' }} above first — the user list is scoped to whichever one you choose, not everyone across every org.</span>
+            </div>
+          } @else if (grantPickableUsers().length > 0) {
             @if (grantUserManualEntry()) {
               <input class="inp" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)" placeholder="user UUID">
             } @else {
               <select class="sel" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)">
                 <option value="">— select —</option>
-                @for (u of pickableUsers(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
+                @for (u of grantPickableUsers(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
               </select>
             }
             <button type="button" class="btn" style="margin-top:6px;font-size:11px;padding:5px 9px"
@@ -330,7 +365,7 @@
           } @else {
             <div class="hiernote warn" style="margin:0 0 8px">
               <span class="i">!</span>
-              <span>No users found for the organisations on file yet — a brand-new org/database may not have synced its user directory. Enter the user's ID directly below, or refresh the directory.</span>
+              <span>No users found for {{ grantScope() === 'client' ? 'the organisations on file' : 'this org' }} yet — a brand-new org/database may not have synced its user directory. Enter the user's ID directly below, or refresh the directory.</span>
             </div>
             @if (usersDebug().length > 0) {
               <div style="font-size:11px;color:var(--gc-text-muted);margin:0 0 8px;line-height:1.6">
@@ -341,7 +376,7 @@
                     @if (row.nameFallback) { · Name fallback: {{ row.nameFallback }} }
                   </div>
                 }
-                <div>All registered users (system-wide): {{ usersDebugGlobal() }}</div>
+                <div>All registered users (system-wide, diagnostic only — never shown as a pick list): {{ usersDebugGlobal() }}</div>
                 @if (usersRawSample()) { <div>Sample: <span style="font-family:monospace;word-break:break-all">{{ usersRawSample() }}</span></div> }
               </div>
             }
@@ -373,32 +408,6 @@
             </div>
           }
         </div>
-        <div class="field">
-          <label>Scope</label>
-          <div class="urgency-toggle">
-            <button type="button" [class.on]="grantScope() === 'location'" (click)="grantScope.set('location')">Location</button>
-            <button type="button" [class.on]="grantScope() === 'org'" (click)="grantScope.set('org')">Organisation</button>
-            <button type="button" [class.on]="grantScope() === 'client'" (click)="grantScope.set('client')">Whole client</button>
-          </div>
-        </div>
-        @if (grantScope() === 'location') {
-          <div class="field">
-            <label>Location</label>
-            <select class="sel" [ngModel]="grantLocationId()" (ngModelChange)="grantLocationId.set($event)">
-              <option value="">— select —</option>
-              @for (loc of locations(); track loc.global_id) { <option [value]="loc.global_id">{{ loc.name }}</option> }
-            </select>
-          </div>
-        }
-        @if (grantScope() === 'org') {
-          <div class="field">
-            <label>Organisation</label>
-            <select class="sel" [ngModel]="grantOrgId()" (ngModelChange)="grantOrgId.set($event)">
-              <option value="">— select —</option>
-              @for (org of orgs(); track org.org_id) { <option [value]="org.org_id">{{ orgName(org.org_id) }}</option> }
-            </select>
-          </div>
-        }
       </div>
       <div class="m-f">
         <button class="btn" (click)="closeGrant()">Cancel</button>
