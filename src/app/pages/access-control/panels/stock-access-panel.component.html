@@ -282,14 +282,26 @@
           @if (usersLoading()) {
             <div class="inp" style="color:var(--gc-text-muted)">Loading users…</div>
           } @else if (users().length > 0) {
-            <select class="sel" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)">
-              <option value="">— select —</option>
-              @for (u of users(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
-            </select>
+            @if (grantUserManualEntry()) {
+              <input class="inp" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)" placeholder="user UUID">
+            } @else {
+              <select class="sel" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)">
+                <option value="">— select —</option>
+                @for (u of users(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
+              </select>
+            }
+            <button type="button" class="btn" style="margin-top:6px;font-size:11px;padding:5px 9px"
+                    (click)="grantUserId.set(''); grantUserManualEntry.set(!grantUserManualEntry())">
+              {{ grantUserManualEntry() ? 'Use the list instead' : "Can't find them? Enter a user ID by hand" }}
+            </button>
           } @else {
-            <div class="hiernote warn" style="margin:0">
+            <div class="hiernote warn" style="margin:0 0 8px">
               <span class="i">!</span>
-              <span>No users found for the organisations on file — grant one of them access to a location or org first, or check the user is registered.</span>
+              <span>No users found for the organisations on file yet — a brand-new org/database may not have synced its user directory. Enter the user's ID directly below, or refresh the directory.</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input class="inp" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)" placeholder="user UUID">
+              <button type="button" class="btn" style="flex:0 0 auto" [disabled]="usersLoading()" (click)="refreshUsers()">Refresh</button>
             </div>
           }
         </div>
