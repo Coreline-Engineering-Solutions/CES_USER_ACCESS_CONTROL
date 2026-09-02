@@ -12,6 +12,18 @@ interface UserGrantGroup {
   grants: LocationAccessGrant[];
 }
 
+/** Per-org outcome of loadUsers()'s three-source lookup, shown directly in
+ *  the Grant modal's empty state — surfacing this in the UI instead of only
+ *  the console, since relaying console output back and forth is slow.
+ *  gis/auth are either a count ("3") or "error: <detail>". */
+interface UsersDebugRow {
+  orgId: string;
+  orgLabel: string;
+  gis: string;
+  auth: string;
+  nameFallback?: string;
+}
+
 /**
  * Last-resort label for an org_id with no entry in the real org directory
  * (`/stock/orgs/list`, loaded into `realOrgs` below) yet — e.g. a client
@@ -48,6 +60,10 @@ export class StockAccessPanelComponent implements OnInit {
   readonly grants = signal<LocationAccessGrant[]>([]);
   readonly users = signal<StockUserRef[]>([]);
   readonly usersLoading = signal(false);
+  /** Per-org breakdown of loadUsers()'s three lookup sources — shown in the
+   *  Grant modal when users() is empty, so what's actually failing is
+   *  visible right there instead of needing console output relayed back. */
+  readonly usersDebug = signal<UsersDebugRow[]>([]);
 
   // ─── Filter/sort over the grants table ──────────────────────────────────
   // With multiple orgs each holding a handful of users at various levels,
@@ -503,34 +519,43 @@ export class StockAccessPanelComponent implements OnInit {
           .filter(([gid]) => !!gid),
       );
 
+      const debugRows: UsersDebugRow[] = [];
       const perOrgLists = await Promise.all(
         orgIds.map(async (gid) => {
+          const row: UsersDebugRow = { orgId: gid, orgLabel: this.orgName(gid), gis: '?', auth: '?' };
+          debugRows.push(row);
+
           const [gisRes, authRes] = await Promise.all([
             this.stockAccess.dbUsersList(gid).catch((err) => {
-              console.warn('[StockAccessPanel] GIS users lookup failed for org', gid, err);
+              row.gis = `error: ${err?.response?.status ?? err?.message ?? err}`;
               return null;
             }),
             this.session.dbUsersList(gid).catch((err) => {
-              console.warn('[StockAccessPanel] auth-api users lookup failed for org', gid, err);
+              row.auth = `error: ${err?.message ?? err}`;
               return [] as any[];
             }),
           ]);
           const gisListRaw = gisRes?.users ?? gisRes?.emails ?? gisRes?.email_list ?? gisRes?.user_list ?? gisRes?.data ?? gisRes;
           const gisList: any[] = Array.isArray(gisListRaw) ? gisListRaw : [];
           const authList: any[] = Array.isArray(authRes) ? authRes : [];
-          console.info('[StockAccessPanel] loadUsers org', gid, '- GIS:', gisList.length, 'auth-api gid:', authList.length); // temporary, see session.dbUsersList
+          if (row.gis === '?') row.gis = String(gisList.length);
+          if (row.auth === '?') row.auth = String(authList.length);
           let combined: any[] = [...gisList, ...authList];
           if (combined.length === 0) {
             // Neither GIS-side nor the auth-api gid lookup found anyone —
             // last resort, same one AC itself falls back to: by name.
             const dbName = dbNameByGid.get(gid) || this.orgName(gid);
-            const byName = await this.session.checkDatabaseUsers(dbName).catch(() => [] as any[]);
+            const byName = await this.session.checkDatabaseUsers(dbName).catch((err) => {
+              row.nameFallback = `"${dbName}" -> error: ${err?.message ?? err}`;
+              return [] as any[];
+            });
             combined = Array.isArray(byName) ? byName : [];
-            console.info('[StockAccessPanel] loadUsers org', gid, 'fell back to name lookup "' + dbName + '" ->', combined.length);
+            if (!row.nameFallback) row.nameFallback = `"${dbName}" -> ${combined.length}`;
           }
           return combined;
         }),
       );
+      this.usersDebug.set(debugRows);
 
       // Deduped by EMAIL (case-insensitive), not by id — the same person can
       // legitimately show up from more than one source with different id

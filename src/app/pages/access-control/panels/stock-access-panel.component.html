@@ -299,6 +299,17 @@
               <span class="i">!</span>
               <span>No users found for the organisations on file yet — a brand-new org/database may not have synced its user directory. Enter the user's ID directly below, or refresh the directory.</span>
             </div>
+            @if (usersDebug().length > 0) {
+              <div style="font-size:11px;color:var(--gc-text-muted);margin:0 0 8px;line-height:1.6">
+                @for (row of usersDebug(); track row.orgId) {
+                  <div>
+                    <strong>{{ row.orgLabel }}</strong> —
+                    GIS: {{ row.gis }} · Auth API: {{ row.auth }}
+                    @if (row.nameFallback) { · Name fallback: {{ row.nameFallback }} }
+                  </div>
+                }
+              </div>
+            }
             <div style="display:flex;gap:8px;align-items:center">
               <input class="inp" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)" placeholder="user UUID">
               <button type="button" class="btn" style="flex:0 0 auto" [disabled]="usersLoading()" (click)="refreshUsers()">Refresh</button>
