@@ -82,6 +82,19 @@ export class StockAccessPanelComponent implements OnInit {
   private static readonly UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   readonly pickableUsers = computed(() => this.users().filter((u) => StockAccessPanelComponent.UUID_RE.test(u.user_gid)));
 
+  /** Per-org membership, built alongside users() by loadUsers() from the
+   *  SAME per-org gis+auth+nameFallback lookups but WITHOUT the system-wide
+   *  listAllUsers() catch-all folded in — unlike Grant (which intentionally
+   *  wants "any registered user" so it can link someone new to an org, see
+   *  loadUsers()'s own doc comment), the location-create Custodian field
+   *  must only offer people actually linked to the location's db. Keyed by
+   *  org_id (== client db gid), same key locDraftOrgId() holds. */
+  readonly usersByOrg = signal<Map<string, StockUserRef[]>>(new Map());
+  /** Custodian dropdown source for the location-create modal — just the
+   *  users linked to whichever org locDraftOrgId() currently holds, not the
+   *  full system-wide users() list. */
+  readonly locDraftOrgUsers = computed(() => this.usersByOrg().get(this.locDraftOrgId()) ?? []);
+
   // ─── GIS projects (stockpile location's project field) ──────────────────
   // Same GIS API, same /admin/projects/all endpoint, same shape Stock
   // Manager's ReferenceDataService.loadProjects()/pickableProjects() use —
@@ -638,6 +651,17 @@ export class StockAccessPanelComponent implements OnInit {
       );
       this.usersDebug.set(debugRows);
 
+      // Per-org membership — built from EACH org's own combined list only
+      // (no system-wide catch-all folded in), so the location-create
+      // Custodian dropdown can offer just the people actually linked to
+      // that org's db. See usersByOrg's own doc comment for why this is a
+      // separate, narrower list from users()/pickableUsers() below.
+      const orgUsersMap = new Map<string, StockUserRef[]>();
+      orgIds.forEach((gid, i) => {
+        orgUsersMap.set(gid, StockAccessPanelComponent.mergeUserLists([perOrgLists[i]]));
+      });
+      this.usersByOrg.set(orgUsersMap);
+
       // System-wide catch-all, fetched once (not per-org — this directory
       // isn't scoped to any one database). A grant's user_id can be a real,
       // valid registered user who simply never showed up in any of the
@@ -665,47 +689,53 @@ export class StockAccessPanelComponent implements OnInit {
         }
       }
 
-      // Deduped by EMAIL (case-insensitive), not by id — the same person can
-      // legitimately show up from more than one source with different id
-      // shapes (a real gid from the GIS list, email-as-id from the auth-api
-      // one), and deduping by id would show them twice under two values
-      // instead of once. A real gid always wins over an email-fallback id
-      // if we see both for the same person.
-      const byEmail = new Map<string, StockUserRef>();
-      for (const list of [...perOrgLists, allUsers]) {
-        if (!Array.isArray(list)) continue;
-        for (const u of list) {
-          const isStr = typeof u === 'string';
-          const email = String(isStr ? u : (u?.email ?? u?.user_email ?? u?.userEmail ?? '')).trim();
-          // Widened on purpose — every plausible id-field spelling seen
-          // across this codebase's various user-list endpoints, since a
-          // narrower match was silently missing whichever one _list_users/
-          // dbUsersList actually use and forcing manual UUID entry for
-          // real, valid users. See usersRawSample above if this still
-          // comes up empty after this.
-          const realId = String(isStr ? '' : (
-            u?.user_gid ?? u?.userGid ?? u?.gid ?? u?.uuid ?? u?.UUID ??
-            u?.user_id ?? u?.userId ?? u?.id ?? u?.global_id ?? u?.globalId ?? ''
-          )).trim();
-          if (!email) continue;
-          const key = email.toLowerCase();
-          const existing = byEmail.get(key);
-          // No real id available — fall back to the email itself so the
-          // entry still shows up in Users & their access for DISPLAY, but
-          // pickableUsers() below filters these back out of anything that
-          // actually submits a value — an email here is not a valid
-          // substitute UUID, confirmed live (Postgres rejects it outright).
-          if (!existing) {
-            byEmail.set(key, { user_gid: realId || email, email });
-          } else if (realId && existing.user_gid === existing.email) {
-            byEmail.set(key, { user_gid: realId, email });
-          }
-        }
-      }
-      this.users.set(Array.from(byEmail.values()).sort((a, b) => a.email.localeCompare(b.email)));
+      this.users.set(StockAccessPanelComponent.mergeUserLists([...perOrgLists, allUsers]));
     } finally {
       this.usersLoading.set(false);
     }
+  }
+
+  /** Shared merge/dedup used by both users() (global, all sources incl. the
+   *  system-wide catch-all) and usersByOrg (per-org, narrower). Deduped by
+   *  EMAIL (case-insensitive), not by id — the same person can legitimately
+   *  show up from more than one source with different id shapes (a real gid
+   *  from the GIS list, email-as-id from the auth-api one), and deduping by
+   *  id would show them twice under two values instead of once. A real gid
+   *  always wins over an email-fallback id if we see both for the same
+   *  person. Sorted by email for stable dropdown/list ordering. */
+  private static mergeUserLists(lists: any[][]): StockUserRef[] {
+    const byEmail = new Map<string, StockUserRef>();
+    for (const list of lists) {
+      if (!Array.isArray(list)) continue;
+      for (const u of list) {
+        const isStr = typeof u === 'string';
+        const email = String(isStr ? u : (u?.email ?? u?.user_email ?? u?.userEmail ?? '')).trim();
+        // Widened on purpose — every plausible id-field spelling seen
+        // across this codebase's various user-list endpoints, since a
+        // narrower match was silently missing whichever one _list_users/
+        // dbUsersList actually use and forcing manual UUID entry for
+        // real, valid users. See usersRawSample above if this still
+        // comes up empty after this.
+        const realId = String(isStr ? '' : (
+          u?.user_gid ?? u?.userGid ?? u?.gid ?? u?.uuid ?? u?.UUID ??
+          u?.user_id ?? u?.userId ?? u?.id ?? u?.global_id ?? u?.globalId ?? ''
+        )).trim();
+        if (!email) continue;
+        const key = email.toLowerCase();
+        const existing = byEmail.get(key);
+        // No real id available — fall back to the email itself so the
+        // entry still shows up in Users & their access for DISPLAY, but
+        // pickableUsers() below filters these back out of anything that
+        // actually submits a value — an email here is not a valid
+        // substitute UUID, confirmed live (Postgres rejects it outright).
+        if (!existing) {
+          byEmail.set(key, { user_gid: realId || email, email });
+        } else if (realId && existing.user_gid === existing.email) {
+          byEmail.set(key, { user_gid: realId, email });
+        }
+      }
+    }
+    return Array.from(byEmail.values()).sort((a, b) => a.email.localeCompare(b.email));
   }
 
   locationName(id: string | null): string {
