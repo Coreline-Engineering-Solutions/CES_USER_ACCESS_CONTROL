@@ -110,7 +110,7 @@ export class ModulesAccessPanelComponent implements OnInit {
         this.modulesAccess.moduleList(),
         this.modulesAccess.userModules(),
       ]);
-      this.modules.set(this.unwrap<ModuleSummary>(moduleListRes, 'modules'));
+      this.modules.set(this.normalizeModules(this.unwrap<any>(moduleListRes, 'modules')));
       this.myModuleAccess.set(this.unwrap<UserModuleAccess>(myModulesRes, 'modules'));
       // Fire-and-forget: the per-user review below fans out one call per
       // reviewable module, so it must not hold up the module list itself.
@@ -129,6 +129,39 @@ export class ModulesAccessPanelComponent implements OnInit {
     if (Array.isArray(res?.[key])) return res[key];
     if (Array.isArray(res?.data)) return res.data;
     return [];
+  }
+
+  /**
+   * Found live 3 Sep — "click a module, it highlights all of them, and
+   * there's no way to grant a role": /modules/list rows carry the module's
+   * id under `global_id`, not `module_gid`. Confirmed against CES_MODULES'
+   * own canonical consumers (module.store.ts, modules.component.html,
+   * sidebar.component.html — every one keys off `mod.global_id`; `module_gid`
+   * only ever appears as a PARAMETER NAME other endpoints accept, sourced
+   * from that same global_id). ModuleAccessEntry/UserModuleAccess (from
+   * /modules/access/*) genuinely do use module_gid — confirmed against
+   * module-access.store.ts — so this mismatch is isolated to ModuleSummary.
+   *
+   * With every row's module_gid silently undefined, selectModule(m.module_gid)
+   * set selectedModuleGid() to undefined, which then equalled every OTHER
+   * row's equally-undefined module_gid — highlighting all of them at once —
+   * and every downstream call (accessList/accessGrant) sent module_gid:
+   * undefined to the API, so nothing about picking a module or granting a
+   * role on it could have worked.
+   *
+   * Normalizes at the one entry point (load()) rather than renaming
+   * module_gid everywhere else in this component, so the rest of the file
+   * keeps working unchanged. Falls back through a few other spellings for
+   * resilience, matching this app's other id-normalizers, but global_id is
+   * the confirmed real one.
+   */
+  private normalizeModules(rows: any[]): ModuleSummary[] {
+    return rows
+      .map((r) => ({
+        module_gid: String(r?.global_id ?? r?.module_gid ?? r?.gid ?? r?.id ?? '').trim(),
+        description: String(r?.description ?? r?.name ?? '').trim(),
+      }))
+      .filter((m) => m.module_gid);
   }
 
   moduleName(id: string): string {
