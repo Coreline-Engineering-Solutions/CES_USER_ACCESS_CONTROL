@@ -84,14 +84,9 @@
 
         <div>
           <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Privileges</h3>
-          @if (canManageRoles()) {
-            <div class="field-row" style="margin-bottom:10px">
-              <div class="field"><input class="inp" [ngModel]="newPrivilegeName()" (ngModelChange)="newPrivilegeName.set($event)" placeholder="Privilege name (e.g. _stock_view)"></div>
-              <div class="field"><input class="inp" [ngModel]="newPrivilegeUtility()" (ngModelChange)="newPrivilegeUtility.set($event)" placeholder="Utility (default GIS System)"></div>
-            </div>
-            @if (privilegeError()) { <div class="hiernote warn"><span class="i">!</span><span>{{ privilegeError() }}</span></div> }
-            <button class="btn primary" [disabled]="creatingPrivilege()" (click)="createPrivilege()">{{ creatingPrivilege() ? 'Creating…' : '+ Create privilege' }}</button>
-          }
+          <p style="font-size:11.5px;color:var(--gc-text-muted);margin:0 0 10px">
+            Defined by the backend, read-only here — link the ones you need to a role below.
+          </p>
           <div class="tablewrap" style="margin-top:12px">
             <table>
               <thead><tr><th>Name</th><th>Utility</th></tr></thead>
@@ -134,8 +129,16 @@
     <!-- ===== USER ASSIGNMENTS ===== -->
     @if (activeTab() === 'users') {
       @if (canManageRoles()) {
+        <div style="display:flex;align-items:center;gap:12px;padding:16px 18px 0">
+          <div class="hiernote" style="flex:1;margin:0">
+            <span class="i">i</span>
+            <span>Users you add here are created on the central auth system and linked to <strong>this database</strong> automatically — the company this session is working in. Assign them a role in the same step, then grant them tool access from the Projects tab.</span>
+          </div>
+          <button class="btn primary" style="flex:0 0 auto" (click)="openAddUser()">+ Add user</button>
+        </div>
+
         <div style="padding:16px 18px 0">
-          <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Assign a role to a user</h3>
+          <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Assign a role to an existing user</h3>
           @if (assignError()) { <div class="hiernote warn"><span class="i">!</span><span>{{ assignError() }}</span></div> }
           <div class="field-row" style="max-width:640px">
             <div class="field">
@@ -222,6 +225,72 @@
         <button class="btn" (click)="closeRevokeAssignment()">Cancel</button>
         <button class="btn primary" style="margin-left:auto" [disabled]="revokingAssignment()" (click)="confirmRevokeAssignment()">
           {{ revokingAssignment() ? 'Revoking…' : 'Confirm revoke' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Add user: create on the auth system, link to the active db, optionally assign a role -->
+@if (showAddUser()) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="Add user">
+    <div class="modal" style="width:560px">
+      <div class="m-h">
+        <h3>Add user</h3>
+        <button class="x" (click)="closeAddUser()" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="m-sec">
+        @if (createUserError()) {
+          <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ createUserError() }}</span></div>
+        }
+        @for (s of createUserSteps(); track s) {
+          <div class="hiernote ok" style="margin:0 0 8px"><span class="i">&#10003;</span><span>{{ s }}</span></div>
+        }
+
+        <div class="field">
+          <label>Email <span class="req" title="Required — this is the account's identity across every CES tool.">*</span></label>
+          <input class="inp" type="email" [ngModel]="newUser().email" (ngModelChange)="patchNewUser({ email: $event })" placeholder="person@company.com">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>First name</label>
+            <input class="inp" [ngModel]="newUser().first_name" (ngModelChange)="patchNewUser({ first_name: $event })">
+          </div>
+          <div class="field">
+            <label>Last name</label>
+            <input class="inp" [ngModel]="newUser().last_name" (ngModelChange)="patchNewUser({ last_name: $event })">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Username</label>
+            <input class="inp" [ngModel]="newUser().username" (ngModelChange)="patchNewUser({ username: $event })">
+          </div>
+          <div class="field">
+            <label>Phone</label>
+            <input class="inp" [ngModel]="newUser().phone" (ngModelChange)="patchNewUser({ phone: $event })">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Role</label>
+          <select class="sel" [ngModel]="newUserRoleGid()" (ngModelChange)="newUserRoleGid.set($event)">
+            <option value="">&mdash; assign later &mdash;</option>
+            @for (r of roles(); track r.role_gid) { <option [value]="r.role_gid">{{ r.role_name }}</option> }
+          </select>
+          <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">
+            Roles come from this database's own role list &mdash; the ones on the Client roles tab, with whatever privileges are linked to them.
+          </div>
+        </div>
+
+        <div style="font-size:11px;color:var(--gc-text-muted);margin-top:12px;line-height:1.5">
+          Database: <strong>{{ session.currentDb()?.name ?? session.currentDb()?.db_name ?? 'the active database' }}</strong> &mdash; set automatically, not selectable. Switch database in the navbar first if this is the wrong company.
+        </div>
+      </div>
+      <div class="m-f">
+        <button class="btn" (click)="closeAddUser()">Cancel</button>
+        <button class="btn primary" style="margin-left:auto" [disabled]="creatingUser()" (click)="submitAddUser()">
+          {{ creatingUser() ? 'Adding…' : 'Add user' }}
         </button>
       </div>
     </div>

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RolesApiService } from '../../services/roles-api.service';
 import { SessionService } from '../../session/session.service';
 import { DbUsersService } from '../../services/db-users.service';
+import { AdminUsersService, NewUserDraft } from '../../services/admin-users.service';
 import { ClientPrivilege, ClientRole, UserRoleAssignment } from '../../services/roles.types';
 import { AccessProject, PROJECT_REGISTRY } from './project-registry';
 import { UserDirectoryPanelComponent } from './panels/user-directory-panel.component';
@@ -20,6 +21,7 @@ export class AccessControlComponent implements OnInit {
   private readonly rolesApi = inject(RolesApiService);
   readonly session = inject(SessionService);
   readonly dbUsers = inject(DbUsersService); // template reads dbUsers.users() for email dropdowns
+  private readonly adminUsers = inject(AdminUsersService);
 
   readonly activeTab = signal<Tab>('projects');
   readonly loading = signal(true);
@@ -47,15 +49,110 @@ export class AccessControlComponent implements OnInit {
   readonly creatingRole = signal(false);
   readonly roleError = signal<string | null>(null);
 
-  readonly newPrivilegeName = signal('');
-  readonly newPrivilegeUtility = signal('GIS System');
-  readonly creatingPrivilege = signal(false);
-  readonly privilegeError = signal<string | null>(null);
+  // Privilege CREATE removed 3 Sep — the privilege list is defined by the
+  // backend and pulled through read-only; UAC links existing privileges to
+  // roles, it does not mint new privilege names. See RolesApiService.
 
   readonly mapRoleGid = signal('');
   readonly mapPrivilegeGid = signal('');
   readonly mapping = signal(false);
   readonly mapError = signal<string | null>(null);
+
+  // ─── Add a user (create -> link to THIS db -> optional role) ────────────
+  // The client admin's own user-management flow, mirroring AC's Users page
+  // but scoped: a user created here is always linked to the database this
+  // session is currently pointed at (the company the admin belongs to),
+  // never to one they pick. Role assignment is offered in the same step
+  // because "created but no role" is a dead-end user.
+  readonly showAddUser = signal(false);
+  readonly newUser = signal<NewUserDraft>({ email: '', first_name: '', last_name: '', username: '', phone: '' });
+  readonly newUserRoleGid = signal('');
+  readonly creatingUser = signal(false);
+  readonly createUserError = signal<string | null>(null);
+  readonly createUserSteps = signal<string[]>([]);
+
+  openAddUser(): void {
+    this.newUser.set({ email: '', first_name: '', last_name: '', username: '', phone: '' });
+    this.newUserRoleGid.set('');
+    this.createUserError.set(null);
+    this.createUserSteps.set([]);
+    this.showAddUser.set(true);
+  }
+
+  closeAddUser(): void {
+    this.showAddUser.set(false);
+  }
+
+  patchNewUser(patch: Partial<NewUserDraft>): void {
+    this.newUser.update((u) => ({ ...u, ...patch }));
+  }
+
+  /**
+   * Create -> link to the active db -> (optionally) assign a role, in that
+   * order, reporting each step as it lands. Deliberately not all-or-nothing:
+   * if the db link fails after the user was created, the user still exists
+   * and the admin is told exactly which step failed, rather than seeing one
+   * generic failure for a partially-completed sequence.
+   */
+  async submitAddUser(): Promise<void> {
+    const draft = this.newUser();
+    const email = draft.email.trim();
+    if (!email) {
+      this.createUserError.set('Email is required.');
+      return;
+    }
+
+    this.creatingUser.set(true);
+    this.createUserError.set(null);
+    this.createUserSteps.set([]);
+    const step = (msg: string) => this.createUserSteps.update((l) => [...l, msg]);
+
+    try {
+      const dbGid = await this.adminUsers.activeDbGid();
+      if (!dbGid) {
+        this.createUserError.set('Could not determine the active database — switch to a database first, then try again.');
+        return;
+      }
+
+      const created = await this.adminUsers.createUser({ ...draft, email });
+      if (!created.ok) {
+        this.createUserError.set(created.detail ?? 'Failed to create the user.');
+        return;
+      }
+      step(`User ${email} created.`);
+
+      const linked = await this.adminUsers.assignUserToDb(email, dbGid);
+      if (!linked) {
+        this.createUserError.set(
+          'The user was created but could not be linked to this database. Link them from the Databases screen, or retry.',
+        );
+        return;
+      }
+      step('Linked to this database.');
+
+      const roleGid = this.newUserRoleGid();
+      if (roleGid) {
+        try {
+          await this.rolesApi.userRoleAssign({ user_email: email, role_gid: roleGid });
+          const roleName = this.roles().find((r) => r.role_gid === roleGid)?.role_name ?? 'role';
+          step(`Assigned ${roleName}.`);
+        } catch (err: any) {
+          this.createUserError.set(
+            `User created and linked, but the role could not be assigned: ${err?.response?.data?.detail ?? err?.message ?? 'unknown error'}`,
+          );
+          return;
+        }
+      }
+
+      await Promise.all([this.dbUsers.reload(), this.load()]);
+      setTimeout(() => this.showAddUser.set(false), 900);
+    } catch (err: any) {
+      console.error('[AccessControl] add user failed:', err);
+      this.createUserError.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to add the user.');
+    } finally {
+      this.creatingUser.set(false);
+    }
+  }
 
   // ─── User-role assignments ──────────────────────────────────────────────
   readonly assignments = signal<UserRoleAssignment[]>([]);
@@ -138,26 +235,6 @@ export class AccessControlComponent implements OnInit {
     } catch (err: any) {
       console.error('[AccessControl] role delete failed:', err);
       this.error.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to delete role');
-    }
-  }
-
-  async createPrivilege(): Promise<void> {
-    const name = this.newPrivilegeName().trim();
-    if (!name) {
-      this.privilegeError.set('Privilege name is required.');
-      return;
-    }
-    this.creatingPrivilege.set(true);
-    this.privilegeError.set(null);
-    try {
-      await this.rolesApi.privilegeCreate({ privilege_name: name, utility_name: this.newPrivilegeUtility().trim() || 'GIS System' });
-      this.newPrivilegeName.set('');
-      await this.load();
-    } catch (err: any) {
-      console.error('[AccessControl] privilege create failed:', err);
-      this.privilegeError.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to create privilege');
-    } finally {
-      this.creatingPrivilege.set(false);
     }
   }
 

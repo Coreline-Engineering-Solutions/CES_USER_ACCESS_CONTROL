@@ -3,7 +3,7 @@ import axios, { AxiosInstance } from 'axios';
 import { SessionService } from '../session/session.service';
 import { environment } from '../../environments/environment';
 import {
-  ClientPrivilege, ClientRole, PrivilegeCreatePayload, RoleCreatePayload,
+  ClientPrivilege, ClientRole, RoleCreatePayload,
   RolePrivilegeMappingPayload, RoleUpdatePayload, UserRoleAssignPayload,
   UserRoleAssignment,
 } from './roles.types';
@@ -80,9 +80,11 @@ export class RolesApiService {
     return this.post<{ response: string; privileges: ClientPrivilege[] }>('/roles/privileges/list', {});
   }
 
-  privilegeCreate(payload: PrivilegeCreatePayload) {
-    return this.post<{ response: string; privilege_gid: string; pk: number }>('/roles/privileges/create', payload);
-  }
+  // privilegeCreate() REMOVED 3 Sep — privileges are defined by the backend
+  // and pulled through as a fixed list; UAC only ever LINKS existing ones to
+  // a role (privilegeAssign/privilegeRevoke below). Creating new privilege
+  // names from a client admin screen was never the intent and produced
+  // privileges no tool actually checks for.
 
   // ─── Role-privilege mappings ────────────────────────────────────────────
 
