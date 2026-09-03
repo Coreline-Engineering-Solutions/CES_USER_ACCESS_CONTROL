@@ -735,7 +735,11 @@ export class StockAccessPanelComponent implements OnInit {
           const authList: any[] = Array.isArray(authRes) ? authRes : [];
           if (row.gis === '?') row.gis = String(gisList.length);
           if (row.auth === '?') row.auth = String(authList.length);
-          let combined: any[] = [...gisList, ...authList];
+          // Auth decides membership, GIS only enriches - see
+          // DbUsersService.scopeToAuthMembership for the full reasoning.
+          // Merging these two as equals is how the whole directory kept
+          // leaking into per-org lists that were otherwise scoped right.
+          let combined: any[] = StockAccessPanelComponent.scopeToAuth(authList, gisList);
           if (combined.length === 0) {
             // Neither GIS-side nor the auth-api gid lookup found anyone —
             // last resort, by name, but ONLY when this gid is a CONFIRMED
@@ -817,6 +821,22 @@ export class StockAccessPanelComponent implements OnInit {
    *  id would show them twice under two values instead of once. A real gid
    *  always wins over an email-fallback id if we see both for the same
    *  person. Sorted by email for stable dropdown/list ordering. */
+  /** Auth API decides who is on this org's db; the GIS row for the same
+   *  person only supplies a real user_gid. Anyone present ONLY in the GIS
+   *  response is dropped - see DbUsersService.scopeToAuthMembership. */
+  private static scopeToAuth(authList: any[], gisList: any[]): any[] {
+    const auth = StockAccessPanelComponent.mergeUserLists([authList]);
+    if (auth.length === 0) return [];
+    const gidByEmail = new Map<string, string>();
+    for (const u of StockAccessPanelComponent.mergeUserLists([gisList])) {
+      if (u.user_gid && u.user_gid !== u.email) gidByEmail.set(u.email.toLowerCase(), u.user_gid);
+    }
+    return auth.map((u) => {
+      const better = gidByEmail.get(u.email.toLowerCase());
+      return better ? { user_gid: better, email: u.email } : u;
+    });
+  }
+
   private static mergeUserLists(lists: any[][]): StockUserRef[] {
     const byEmail = new Map<string, StockUserRef>();
     for (const list of lists) {
