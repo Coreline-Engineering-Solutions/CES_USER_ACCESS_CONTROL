@@ -159,3 +159,116 @@
     </div>
   </div>
 }
+
+  <!-- ===== Users & their module access =====================================
+       The per-module list above answers "who is on this module". This is the
+       other direction - "what does this person hold, across everything" -
+       which is the question an access review actually asks. Same expandable
+       pattern as the Stock panel's Users & their access. -->
+  <div class="section-h" style="margin-top:22px">
+    <h3>Users &amp; their access <span class="count">{{ groupedByUser().length }}</span></h3>
+    <span class="section-line"></span>
+  </div>
+
+  @if (skippedModules() > 0) {
+    <div class="hiernote" style="margin:0 18px 10px">
+      <span class="i">i</span>
+      <span>
+        Showing access across {{ reviewableModules().length - skippedModules() }} of
+        {{ modules().length }} modules — {{ skippedModules() }} could not be read with your
+        permissions. You only see access on modules you manage (a GIS System Manager sees all).
+      </span>
+    </div>
+  }
+
+  @if (allGrantsError()) {
+    <div class="hiernote warn" style="margin:0 18px 10px"><span class="i">!</span><span>{{ allGrantsError() }}</span></div>
+  }
+
+  <div class="filterbar">
+    <div class="fgroup grow">
+      <label>Search</label>
+      <input class="inp" [ngModel]="userSearch()" (ngModelChange)="userSearch.set($event)" placeholder="Email or module…">
+    </div>
+    @if (userSearch()) {
+      <div class="fgroup">
+        <button class="btn" style="align-self:flex-end" (click)="userSearch.set('')">Clear</button>
+      </div>
+    }
+  </div>
+
+  <div style="padding:0 18px 18px">
+    @if (allGrantsLoading() && !moduleGrants()) {
+      <p style="color:var(--gc-text-muted);font-size:12.5px">Loading access across your modules…</p>
+    } @else if (groupedByUser().length === 0) {
+      <p style="color:var(--gc-text-muted);font-size:12.5px">
+        @if (userSearch()) { No users match that search. }
+        @else if (reviewableModules().length === 0) { You do not manage any modules, so there is no access to review. }
+        @else { Nobody has been granted access on the modules you manage yet. }
+      </p>
+    } @else {
+      <div class="ug-list">
+        @for (grp of groupedByUser(); track grp.email) {
+          <div class="ug-row" [class.ug-row--open]="isUserExpanded(grp.email)">
+            <button type="button" class="ug-head" (click)="toggleUserExpanded(grp.email)"
+                    [attr.aria-expanded]="isUserExpanded(grp.email)"
+                    [title]="isUserExpanded(grp.email) ? 'Hide this user\'s modules' : 'Show every module this user has access on'">
+              <span class="ug-avatar">{{ userInitial(grp.email) }}</span>
+              <div class="ug-who">
+                <span class="ug-email">{{ grp.email }}</span>
+                <span class="ug-summary">{{ userGrantSummary(grp) }}</span>
+              </div>
+              <div class="ug-roles">
+                @for (lvl of userLevels(grp); track lvl) {
+                  <span class="pill" [class]="'role-' + lvl">{{ lvl }}</span>
+                }
+              </div>
+              <span class="ug-count">{{ grp.grants.length }}</span>
+              <svg class="ug-chev" [class.rotated]="isUserExpanded(grp.email)"
+                   width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M9 18l6-6-6-6"/>
+              </svg>
+            </button>
+
+            @if (isUserExpanded(grp.email)) {
+              <div class="ug-body">
+                <table class="ug-grants">
+                  <thead>
+                    <tr>
+                      <th>Module</th>
+                      <th>Level</th>
+                      <th>Granted by</th>
+                      <th>Granted</th>
+                      <th class="actions">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (g of grp.grants; track g.module_gid) {
+                      <tr>
+                        <td>{{ g.module_name }}</td>
+                        <td><span class="pill" [class]="'role-' + g.access_level">{{ g.access_level }}</span></td>
+                        <td class="num">{{ g.granted_by || '—' }}</td>
+                        <td class="num">{{ (g.granted_date | slice:0:10) || '—' }}</td>
+                        <td class="actions">
+                          @if (canManageModule(g.module_gid)) {
+                            <button class="btn"
+                                    [disabled]="rowRevoking() === grp.email + '::' + g.module_gid"
+                                    title="Remove this user's access to this module. Their other modules are unaffected."
+                                    (click)="revokeFromUserView(grp.email, g)">
+                              {{ rowRevoking() === grp.email + '::' + g.module_gid ? 'Revoking…' : 'Revoke' }}
+                            </button>
+                          } @else {
+                            <span style="color:var(--gc-text-muted);font-size:11px">not yours to manage</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
