@@ -55,93 +55,78 @@
         <span>Client-local roles/privileges live in this client's own database — separate from the Auth API's global roles. Assign privileges to a role here, then assign the role to users in the next tab.</span>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:14px 18px">
-        <div>
-          <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Roles</h3>
-          @if (canManageRoles()) {
-            @if (missingStandardRoles().length > 0) {
-              <div class="hiernote warn" style="margin-bottom:10px">
-                <span class="i">!</span>
-                <span>
-                  This database is missing the standard role{{ missingStandardRoles().length === 1 ? '' : 's' }}:
-                  <strong>{{ missingStandardRoles().join(', ') }}</strong>.
-                  <button class="btn" style="margin-left:8px;font-size:11px;padding:4px 9px" [disabled]="seedingRoles()" (click)="seedStandardRoles()">
-                    {{ seedingRoles() ? 'Creating…' : 'Create them' }}
-                  </button>
-                </span>
-              </div>
-            }
-            @if (seedResult()) { <div class="hiernote ok" style="margin-bottom:10px"><span class="i">✓</span><span>{{ seedResult() }}</span></div> }
-            <div class="field-row" style="margin-bottom:10px">
-              <div class="field"><input class="inp" [ngModel]="newRoleName()" (ngModelChange)="newRoleName.set($event)" placeholder="Role name"></div>
-              <div class="field"><input class="inp" [ngModel]="newRoleUtility()" (ngModelChange)="newRoleUtility.set($event)" placeholder="Utility (default GIS System)"></div>
+      <!-- Roles list. Single full-width column - the privileges table that
+           used to sit on the right is gone: the catalogue is only useful
+           in the context of a role, which is what the editor modal is for. -->
+      <div style="padding:14px 18px">
+        @if (canManageRoles()) {
+          @if (missingStandardRoles().length > 0) {
+            <div class="hiernote warn" style="margin-bottom:10px">
+              <span class="i">!</span>
+              <span>
+                This database is missing the standard role{{ missingStandardRoles().length === 1 ? '' : 's' }}:
+                <strong>{{ missingStandardRoles().join(', ') }}</strong>.
+                <button class="btn" style="margin-left:8px;font-size:11px;padding:4px 9px" [disabled]="seedingRoles()" (click)="seedStandardRoles()">
+                  {{ seedingRoles() ? 'Creating…' : 'Create them' }}
+                </button>
+              </span>
             </div>
-            @if (roleError()) { <div class="hiernote warn"><span class="i">!</span><span>{{ roleError() }}</span></div> }
-            <button class="btn primary" [disabled]="creatingRole()" (click)="createRole()">{{ creatingRole() ? 'Creating…' : '+ Create role' }}</button>
           }
-          <div class="tablewrap" style="margin-top:12px">
-            <table>
-              <thead><tr><th>Name</th><th>Utility</th>@if (canManageRoles()) { <th class="actions">Action</th> }</tr></thead>
-              <tbody>
-                @for (r of roles(); track r.role_gid) {
-                  <tr>
-                    <td>{{ r.role_name }}</td>
-                    <td class="num">{{ r.utility_name }}</td>
-                    @if (canManageRoles()) {
-                      <td class="actions" style="white-space:nowrap">
-                        <button class="btn" (click)="openRolePrivileges(r)">Privileges</button>
-                        <button class="btn" (click)="deleteRole(r)">Delete</button>
-                      </td>
-                    }
-                  </tr>
-                } @empty { <tr><td colspan="3" style="color:var(--gc-text-muted)">No roles yet.</td></tr> }
-              </tbody>
-            </table>
-          </div>
+          @if (seedResult()) { <div class="hiernote ok" style="margin-bottom:10px"><span class="i">✓</span><span>{{ seedResult() }}</span></div> }
+          @if (privilegesError()) { <div class="hiernote warn" style="margin-bottom:10px"><span class="i">!</span><span>{{ privilegesError() }}</span></div> }
+        }
+
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+          <input class="inp" style="flex:1 1 220px;max-width:320px"
+                 [ngModel]="roleSearch()" (ngModelChange)="roleSearch.set($event)"
+                 placeholder="Filter roles…">
+          <span style="font-size:11.5px;color:var(--gc-text-muted)">
+            {{ filteredRoles().length }} of {{ roles().length }} role{{ roles().length === 1 ? '' : 's' }}
+            · {{ privileges().length }} privileges available
+          </span>
+          @if (canManageRoles()) {
+            <button class="btn primary" style="margin-left:auto" (click)="showCreateRole.set(!showCreateRole())">
+              {{ showCreateRole() ? 'Cancel' : '+ New role' }}
+            </button>
+          }
         </div>
 
-        <div>
-          <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Privileges</h3>
-          <p style="font-size:11.5px;color:var(--gc-text-muted);margin:0 0 10px">
-            Defined by the backend, read-only here — link the ones you need to a role below.
-          </p>
-          <div class="tablewrap" style="margin-top:12px">
-            <table>
-              <thead><tr><th>Name</th><th>Utility</th></tr></thead>
-              <tbody>
-                @for (p of privileges(); track p.privilege_gid) {
-                  <tr><td class="num">{{ p.privilege_name }}</td><td class="num">{{ p.utility_name }}</td></tr>
-                } @empty { <tr><td colspan="2" style="color:var(--gc-text-muted)">No privileges yet.</td></tr> }
-              </tbody>
-            </table>
+        @if (canManageRoles() && showCreateRole()) {
+          <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
+            <div class="field" style="flex:1 1 200px;margin:0"><label>Role name</label><input class="inp" [ngModel]="newRoleName()" (ngModelChange)="newRoleName.set($event)" placeholder="e.g. Surveyor"></div>
+            <div class="field" style="flex:1 1 180px;margin:0"><label>Utility</label><input class="inp" [ngModel]="newRoleUtility()" (ngModelChange)="newRoleUtility.set($event)" placeholder="GIS System"></div>
+            <button class="btn primary" style="margin-bottom:2px" [disabled]="creatingRole()" (click)="createRole()">{{ creatingRole() ? 'Creating…' : 'Create' }}</button>
           </div>
+          @if (roleError()) { <div class="hiernote warn" style="margin-bottom:10px"><span class="i">!</span><span>{{ roleError() }}</span></div> }
+        }
+
+        <!-- Scrolls internally rather than growing the page - a db with
+             dozens of roles keeps the filter and header in view. -->
+        <div class="tablewrap" style="max-height:min(58vh,560px);overflow:auto">
+          <table>
+            <thead><tr><th>Role</th><th>Utility</th><th>Type</th>@if (canManageRoles()) { <th class="actions">Actions</th> }</tr></thead>
+            <tbody>
+              @for (r of filteredRoles(); track r.role_gid) {
+                <tr>
+                  <td><strong>{{ r.role_name }}</strong></td>
+                  <td class="num">{{ r.utility_name }}</td>
+                  <td class="num">{{ r.is_system ? 'System' : 'Custom' }}</td>
+                  @if (canManageRoles()) {
+                    <td class="actions" style="white-space:nowrap">
+                      <button class="btn" (click)="openRolePrivileges(r)">Privileges</button>
+                      <button class="btn" (click)="deleteRole(r)">Delete</button>
+                    </td>
+                  }
+                </tr>
+              } @empty {
+                <tr><td colspan="4" style="color:var(--gc-text-muted)">
+                  {{ roleSearch() ? 'No roles match that filter.' : 'No roles on this database yet.' }}
+                </td></tr>
+              }
+            </tbody>
+          </table>
         </div>
       </div>
-
-      @if (canManageRoles()) {
-        <div style="padding:0 18px 20px">
-          <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Assign a privilege to a role</h3>
-          @if (mapError()) { <div class="hiernote warn"><span class="i">!</span><span>{{ mapError() }}</span></div> }
-          <div class="field-row" style="max-width:640px">
-            <div class="field">
-              <label>Role</label>
-              <select class="sel" [ngModel]="mapRoleGid()" (ngModelChange)="mapRoleGid.set($event)">
-                <option value="">— select —</option>
-                @for (r of roles(); track r.role_gid) { <option [value]="r.role_gid">{{ r.role_name }}</option> }
-              </select>
-            </div>
-            <div class="field">
-              <label>Privilege</label>
-              <select class="sel" [ngModel]="mapPrivilegeGid()" (ngModelChange)="mapPrivilegeGid.set($event)">
-                <option value="">— select —</option>
-                @for (p of privileges(); track p.privilege_gid) { <option [value]="p.privilege_gid">{{ p.privilege_name }}</option> }
-              </select>
-            </div>
-          </div>
-          <button class="btn primary" [disabled]="mapping()" (click)="assignPrivilege()">{{ mapping() ? 'Saving…' : 'Assign' }}</button>
-          <button class="btn" [disabled]="mapping()" (click)="revokePrivilege()">Revoke</button>
-        </div>
-      }
     }
 
     <!-- ===== USER ASSIGNMENTS ===== -->
@@ -369,58 +354,63 @@
   </div>
 }
 
-<!-- Link privileges to a role. Action panel, not a state editor - see
-     openRolePrivileges() in the component for why current mappings cannot
-     be shown yet. -->
+<!-- Role privileges: a real two-way editor. Current state comes from
+     `_check_role_privileges` for THIS database, so the ticks mean something;
+     Save applies only the difference. -->
 @if (privRoleTarget(); as role) {
   <div class="scrim on" role="dialog" aria-modal="true" aria-label="Role privileges">
-    <div class="modal" style="width:640px">
+    <div class="modal" style="width:680px;max-width:calc(100vw - 32px)">
       <div class="m-h">
         <h3>Privileges</h3><span class="no">{{ role.role_name }}</span>
         <button class="x" (click)="closeRolePrivileges()" aria-label="Close">✕</button>
       </div>
       <div class="m-sec">
-        <div class="hiernote" style="margin:0 0 12px">
-          <span class="i">i</span>
-          <span>
-            The API can list every privilege and link/unlink them, but has no
-            "what is already on this role" endpoint yet — so this shows the full
-            list rather than pretending to reflect current state. Tick what you
-            want, then Link or Unlink. Re-linking something already linked is
-            harmless.
-          </span>
-        </div>
         @if (privError()) { <div class="hiernote warn" style="margin:0 0 10px"><span class="i">!</span><span>{{ privError() }}</span></div> }
         @if (privResult()) { <div class="hiernote ok" style="margin:0 0 10px"><span class="i">✓</span><span>{{ privResult() }}</span></div> }
 
-        <div class="field">
-          <input class="inp" [ngModel]="privSearch()" (ngModelChange)="privSearch.set($event)" placeholder="Filter privileges…">
-        </div>
+        @if (privLoading()) {
+          <p style="color:var(--gc-text-muted);font-size:12.5px;padding:10px 0;margin:0">Loading this role’s privileges…</p>
+        } @else {
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+            <input class="inp" style="flex:1 1 200px" [ngModel]="privSearch()" (ngModelChange)="privSearch.set($event)" placeholder="Filter privileges…">
+            <span style="font-size:11.5px;color:var(--gc-text-muted)">
+              {{ privDraft().size }} of {{ privileges().length }} selected
+            </span>
+          </div>
 
-        <div style="max-height:320px;overflow:auto;border:1px solid var(--gc-border);border-radius:8px;padding:6px 10px">
-          @for (pv of filteredPrivileges(); track pv.privilege_gid) {
-            <label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;font-size:12.5px">
-              <input type="checkbox"
-                     [checked]="privSelection().has(pv.privilege_gid)"
-                     (change)="togglePrivSelection(pv.privilege_gid)">
-              <span style="font-family:monospace">{{ pv.privilege_name }}</span>
-              <span style="margin-left:auto;color:var(--gc-text-muted);font-size:11px">{{ pv.utility_name }}</span>
-            </label>
-          } @empty {
-            <p style="color:var(--gc-text-muted);font-size:12.5px;padding:8px 2px;margin:0">No privileges match.</p>
+          <div style="max-height:min(46vh,400px);overflow:auto;border:1px solid var(--gc-border);border-radius:8px;padding:6px 10px">
+            @for (name of filteredPrivileges(); track name) {
+              <label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;font-size:12.5px">
+                <input type="checkbox" [checked]="privDraft().has(name)" (change)="togglePrivilege(name)">
+                <span style="font-family:monospace">{{ name }}</span>
+                @if (privLinked().has(name) && !privDraft().has(name)) {
+                  <span class="pill err" style="margin-left:auto;font-size:10px">removing</span>
+                } @else if (!privLinked().has(name) && privDraft().has(name)) {
+                  <span class="pill ok" style="margin-left:auto;font-size:10px">adding</span>
+                }
+              </label>
+            } @empty {
+              <p style="color:var(--gc-text-muted);font-size:12.5px;padding:8px 2px;margin:0">
+                {{ privileges().length === 0 ? 'No privileges came back from the auth API for this utility.' : 'No privileges match that filter.' }}
+              </p>
+            }
+          </div>
+
+          @if (privDirty()) {
+            <div style="font-size:11.5px;color:var(--gc-text-muted);margin-top:8px">
+              Pending: {{ privToAdd().length }} to add, {{ privToRemove().length }} to remove.
+            </div>
           }
-        </div>
-        <div style="font-size:11px;color:var(--gc-text-muted);margin-top:8px">
-          {{ privSelection().size }} selected of {{ filteredPrivileges().length }} shown.
-        </div>
+        }
       </div>
       <div class="m-f">
         <button class="btn" (click)="closeRolePrivileges()">Close</button>
-        <button class="btn" style="margin-left:auto" [disabled]="privBusy()" (click)="unlinkSelectedPrivileges()">
-          {{ privBusy() ? 'Working…' : 'Unlink selected' }}
-        </button>
-        <button class="btn primary" [disabled]="privBusy()" (click)="linkSelectedPrivileges()">
-          {{ privBusy() ? 'Working…' : 'Link selected' }}
+        @if (privDirty()) {
+          <button class="btn" style="margin-left:auto" [disabled]="privBusy()" (click)="resetPrivilegeDraft()">Reset</button>
+        }
+        <button class="btn primary" [style.margin-left]="privDirty() ? null : 'auto'"
+                [disabled]="privBusy() || privLoading() || !privDirty()" (click)="saveRolePrivileges()">
+          {{ privBusy() ? 'Saving…' : 'Save changes' }}
         </button>
       </div>
     </div>

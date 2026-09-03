@@ -5,7 +5,8 @@ import { RolesApiService } from '../../services/roles-api.service';
 import { SessionService } from '../../session/session.service';
 import { DbUsersService } from '../../services/db-users.service';
 import { AdminUsersService, NewUserDraft } from '../../services/admin-users.service';
-import { ClientPrivilege, ClientRole, UserRoleAssignment } from '../../services/roles.types';
+import { ClientRolesService } from '../../services/client-roles.service';
+import { ClientRole, UserRoleAssignment } from '../../services/roles.types';
 import { AccessProject, PROJECT_REGISTRY } from './project-registry';
 import { UserDirectoryPanelComponent } from './panels/user-directory-panel.component';
 
@@ -22,6 +23,7 @@ export class AccessControlComponent implements OnInit {
   readonly session = inject(SessionService);
   readonly dbUsers = inject(DbUsersService); // template reads dbUsers.users() for email dropdowns
   private readonly adminUsers = inject(AdminUsersService);
+  private readonly clientRoles = inject(ClientRolesService);
 
   readonly activeTab = signal<Tab>('projects');
   readonly loading = signal(true);
@@ -42,7 +44,23 @@ export class AccessControlComponent implements OnInit {
 
   // ─── Client roles/privileges ────────────────────────────────────────────
   readonly roles = signal<ClientRole[]>([]);
-  readonly privileges = signal<ClientPrivilege[]>([]);
+  /** Privilege NAMES from the auth API's `_available_privileges` (the
+   *  catalogue AC has always used). The GIS `/roles/privileges/list`
+   *  surface this used to read was not pulling anything through and was
+   *  not db-specific - see ClientRolesService for why this moved. */
+  readonly privileges = signal<string[]>([]);
+  readonly privilegesError = signal<string | null>(null);
+
+  /** Roles-tab scaling: filter + collapsed create form, so a db with dozens
+   *  of roles stays usable instead of pushing everything off-screen. */
+  readonly roleSearch = signal('');
+  readonly showCreateRole = signal(false);
+  readonly filteredRoles = computed<ClientRole[]>(() => {
+    const q = this.roleSearch().trim().toLowerCase();
+    const list = this.roles();
+    if (!q) return list;
+    return list.filter((r) => r.role_name.toLowerCase().includes(q) || r.utility_name.toLowerCase().includes(q));
+  });
 
   readonly newRoleName = signal('');
   readonly newRoleUtility = signal('GIS System');
@@ -52,11 +70,6 @@ export class AccessControlComponent implements OnInit {
   // Privilege CREATE removed 3 Sep — the privilege list is defined by the
   // backend and pulled through read-only; UAC links existing privileges to
   // roles, it does not mint new privilege names. See RolesApiService.
-
-  readonly mapRoleGid = signal('');
-  readonly mapPrivilegeGid = signal('');
-  readonly mapping = signal(false);
-  readonly mapError = signal<string | null>(null);
 
   // --- Standard roles per database ---------------------------------------
   // Every client db is supposed to carry the same three GIS roles. Rather
@@ -98,85 +111,130 @@ export class AccessControlComponent implements OnInit {
     );
   }
 
-  // --- Per-role privilege linking -----------------------------------------
-  // The /roles/* surface has no "privileges for THIS role" endpoint - only
-  // "every privilege" (privilegesList) plus assign/revoke. So this is an
-  // ACTION panel, not a state toggle: tick privileges, then Link or Unlink.
-  // Deliberately NOT rendered as checkboxes-reflecting-current-state, which
-  // would be a lie about data we cannot read. Flagged to backend; the moment
-  // a per-role list endpoint exists this becomes a real two-way editor.
+  // --- Per-role privilege editor -----------------------------------------
+  // A real two-way editor now: `_check_role_privileges` returns what is
+  // actually on the role for THIS database, so the checkboxes reflect real
+  // state and Save applies the difference (assign what was ticked, remove
+  // what was unticked). The earlier blind tick-then-Link/Unlink panel only
+  // existed because the GIS /roles/* surface had no per-role read.
   readonly privRoleTarget = signal<ClientRole | null>(null);
-  readonly privSelection = signal<Set<string>>(new Set());
+  readonly privLinked = signal<Set<string>>(new Set());   // as loaded from the server
+  readonly privDraft = signal<Set<string>>(new Set());    // as edited here
   readonly privSearch = signal('');
+  readonly privLoading = signal(false);
   readonly privBusy = signal(false);
   readonly privResult = signal<string | null>(null);
   readonly privError = signal<string | null>(null);
 
-  readonly filteredPrivileges = computed<ClientPrivilege[]>(() => {
+  readonly filteredPrivileges = computed<string[]>(() => {
     const q = this.privSearch().trim().toLowerCase();
     const list = this.privileges();
     if (!q) return list;
-    return list.filter(
-      (pv) => pv.privilege_name.toLowerCase().includes(q) || pv.utility_name.toLowerCase().includes(q),
-    );
+    return list.filter((n) => n.toLowerCase().includes(q));
   });
 
-  openRolePrivileges(role: ClientRole): void {
+  /** Ticked-minus-loaded and loaded-minus-ticked - what Save will actually
+   *  send, and what the footer counts so the admin can see the size of the
+   *  change before committing it. */
+  readonly privToAdd = computed<string[]>(() => {
+    const linked = this.privLinked();
+    return Array.from(this.privDraft()).filter((n) => !linked.has(n));
+  });
+  readonly privToRemove = computed<string[]>(() => {
+    const draft = this.privDraft();
+    return Array.from(this.privLinked()).filter((n) => !draft.has(n));
+  });
+  readonly privDirty = computed(() => this.privToAdd().length > 0 || this.privToRemove().length > 0);
+
+  async openRolePrivileges(role: ClientRole): Promise<void> {
     this.privRoleTarget.set(role);
-    this.privSelection.set(new Set());
     this.privSearch.set('');
     this.privResult.set(null);
     this.privError.set(null);
+    this.privLinked.set(new Set());
+    this.privDraft.set(new Set());
+    this.privLoading.set(true);
+    try {
+      const linked = await this.clientRoles.rolePrivileges(role.role_name, role.utility_name || 'GIS System');
+      this.privLinked.set(new Set(linked));
+      this.privDraft.set(new Set(linked));
+    } catch (err: any) {
+      console.error('[AccessControl] role privileges load failed:', err);
+      this.privError.set('Could not load this role\'s current privileges.');
+    } finally {
+      this.privLoading.set(false);
+    }
   }
 
   closeRolePrivileges(): void {
     this.privRoleTarget.set(null);
   }
 
-  togglePrivSelection(gid: string): void {
-    this.privSelection.update((set) => {
+  togglePrivilege(name: string): void {
+    this.privDraft.update((set) => {
       const next = new Set(set);
-      if (next.has(gid)) next.delete(gid);
-      else next.add(gid);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
       return next;
     });
   }
 
-  private async applyPrivileges(mode: 'link' | 'unlink'): Promise<void> {
+  resetPrivilegeDraft(): void {
+    this.privDraft.set(new Set(this.privLinked()));
+    this.privResult.set(null);
+    this.privError.set(null);
+  }
+
+  /** Applies only the difference. Each call is reported individually so a
+   *  partial failure names the privileges that did not take rather than
+   *  rolling back a set of changes that already landed server-side. */
+  async saveRolePrivileges(): Promise<void> {
     const role = this.privRoleTarget();
-    const gids = Array.from(this.privSelection());
-    if (!role || gids.length === 0) {
-      this.privError.set('Pick at least one privilege.');
-      return;
-    }
+    if (!role) return;
+    const add = this.privToAdd();
+    const remove = this.privToRemove();
+    if (add.length === 0 && remove.length === 0) return;
+
+    const utility = role.utility_name || 'GIS System';
     this.privBusy.set(true);
     this.privError.set(null);
     this.privResult.set(null);
-    let ok = 0;
     const failed: string[] = [];
-    for (const gid of gids) {
-      const name = this.privileges().find((pv) => pv.privilege_gid === gid)?.privilege_name ?? gid.slice(0, 8);
+    let added = 0;
+    let removed = 0;
+
+    for (const name of add) {
       try {
-        if (mode === 'link') await this.rolesApi.privilegeAssign({ role_gid: role.role_gid, privilege_gid: gid });
-        else await this.rolesApi.privilegeRevoke({ role_gid: role.role_gid, privilege_gid: gid });
-        ok++;
-      } catch (err: any) {
-        console.error('[AccessControl] privilege ' + mode + ' failed:', name, err);
-        failed.push(name);
-      }
+        if (await this.clientRoles.assignPrivilege(role.role_name, name, utility)) added++;
+        else failed.push(name);
+      } catch { failed.push(name); }
     }
+    for (const name of remove) {
+      try {
+        if (await this.clientRoles.removePrivilege(role.role_name, name, utility)) removed++;
+        else failed.push(name);
+      } catch { failed.push(name); }
+    }
+
+    // Re-read rather than assuming - the server is the truth about what
+    // actually stuck, especially after a partial failure.
+    try {
+      const linked = await this.clientRoles.rolePrivileges(role.role_name, utility);
+      this.privLinked.set(new Set(linked));
+      this.privDraft.set(new Set(linked));
+    } catch { /* leave the draft as-is; the message below still applies */ }
+
     this.privBusy.set(false);
-    const verb = mode === 'link' ? 'Linked' : 'Unlinked';
+    const parts: string[] = [];
+    if (added) parts.push('added ' + added);
+    if (removed) parts.push('removed ' + removed);
     this.privResult.set(
       failed.length === 0
-        ? verb + ' ' + ok + ' privilege' + (ok === 1 ? '' : 's') + ' on ' + role.role_name + '.'
-        : verb + ' ' + ok + '; failed on ' + failed.join(', ') + '.',
+        ? 'Saved - ' + (parts.join(', ') || 'no change') + ' on ' + role.role_name + '.'
+        : 'Saved ' + (parts.join(', ') || 'nothing') + '; failed on: ' + failed.join(', ') + '.',
     );
-    this.privSelection.set(new Set());
   }
 
-  linkSelectedPrivileges(): Promise<void> { return this.applyPrivileges('link'); }
-  unlinkSelectedPrivileges(): Promise<void> { return this.applyPrivileges('unlink'); }
 
   // ─── Add a user (create -> link to THIS db -> optional role) ────────────
   // The client admin's own user-management flow, mirroring AC's Users page
@@ -363,13 +421,17 @@ export class AccessControlComponent implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     try {
-      const [rolesRes, privRes, assignRes] = await Promise.all([
+      const [rolesRes, privNames, assignRes] = await Promise.all([
         this.rolesApi.rolesList(),
-        this.rolesApi.privilegesList(),
+        this.clientRoles.availablePrivileges('GIS System').catch((err) => {
+          console.error('[AccessControl] privilege catalogue failed:', err);
+          this.privilegesError.set('Could not load the privilege list from the auth API.');
+          return [] as string[];
+        }),
         this.rolesApi.userRolesList(),
       ]);
       this.roles.set(rolesRes?.roles ?? []);
-      this.privileges.set(privRes?.privileges ?? []);
+      this.privileges.set(privNames);
       this.assignments.set(assignRes?.assignments ?? []);
     } catch (err: any) {
       console.error('[AccessControl] load failed:', err);
@@ -411,39 +473,7 @@ export class AccessControlComponent implements OnInit {
     }
   }
 
-  async assignPrivilege(): Promise<void> {
-    if (!this.mapRoleGid() || !this.mapPrivilegeGid()) {
-      this.mapError.set('Select both a role and a privilege.');
-      return;
-    }
-    this.mapping.set(true);
-    this.mapError.set(null);
-    try {
-      await this.rolesApi.privilegeAssign({ role_gid: this.mapRoleGid(), privilege_gid: this.mapPrivilegeGid() });
-    } catch (err: any) {
-      console.error('[AccessControl] privilege assign failed:', err);
-      this.mapError.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to assign privilege');
-    } finally {
-      this.mapping.set(false);
-    }
-  }
 
-  async revokePrivilege(): Promise<void> {
-    if (!this.mapRoleGid() || !this.mapPrivilegeGid()) {
-      this.mapError.set('Select both a role and a privilege.');
-      return;
-    }
-    this.mapping.set(true);
-    this.mapError.set(null);
-    try {
-      await this.rolesApi.privilegeRevoke({ role_gid: this.mapRoleGid(), privilege_gid: this.mapPrivilegeGid() });
-    } catch (err: any) {
-      console.error('[AccessControl] privilege revoke failed:', err);
-      this.mapError.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to revoke privilege');
-    } finally {
-      this.mapping.set(false);
-    }
-  }
 
   // ─── User-role assignments ────────────────────────────────────────────────
 
