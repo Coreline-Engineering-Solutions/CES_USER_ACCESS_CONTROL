@@ -64,8 +64,10 @@ export class StockAccessPanelComponent implements OnInit {
    *  Grant modal when users() is empty, so what's actually failing is
    *  visible right there instead of needing console output relayed back. */
   readonly usersDebug = signal<UsersDebugRow[]>([]);
-  /** Count/error for the system-wide catch-all (session.listAllUsers), '?'
-   *  while loading. Shown next to usersDebug's per-org breakdown. */
+  /** Was: count/error for the system-wide, cross-client catch-all
+   *  (session.listAllUsers()) — REMOVED 2 Sep, see loadUsers()'s own
+   *  comment. Kept as a signal (now just states that it was removed) so the
+   *  debug block in the template doesn't need its own conditional. */
   readonly usersDebugGlobal = signal<string>('?');
   /** Raw JSON of the first non-string user object seen across any source,
    *  so a field-name mismatch in the id lookup is visible directly in the
@@ -82,16 +84,13 @@ export class StockAccessPanelComponent implements OnInit {
   private static readonly UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   /** Union of every org's db-linked users, deduped by email — the actual
-   *  picker source for Grant's User field below. Deliberately narrower than
-   *  users() (which folds in session.listAllUsers(), a genuinely
-   *  system-wide, cross-client directory) — 2 Sep: Grant's picker must only
-   *  offer users linked to a db this admin can already see, never "anyone
-   *  registered anywhere," per explicit direction repeated throughout this
-   *  session. The manual-entry escape hatch (grantUserManualEntry) still
-   *  covers granting to someone not yet linked to any org on file — that
-   *  was the actual reason the system-wide fold-in got added in the first
-   *  place, and manual entry covers it without needing to show the whole
-   *  system's users to do it. */
+   *  picker source for Grant's User field below. As of 2 Sep, users() itself
+   *  is built the same way (no more system-wide fold-in — see loadUsers()'s
+   *  comment), so this and users() carry the same data; kept as its own
+   *  computed rather than collapsed into users() so the per-org union logic
+   *  stays in one obvious place. The manual-entry escape hatch
+   *  (grantUserManualEntry) covers granting to someone not yet linked to any
+   *  org on file, without ever needing a broader directory to fall back to. */
   readonly dbLinkedUsers = computed<StockUserRef[]>(() => {
     const byEmail = new Map<string, StockUserRef>();
     for (const list of this.usersByOrg().values()) {
@@ -778,22 +777,19 @@ export class StockAccessPanelComponent implements OnInit {
       });
       this.usersByOrg.set(orgUsersMap);
 
-      // System-wide catch-all, fetched once (not per-org — this directory
-      // isn't scoped to any one database). DISPLAY resolution only as of
-      // 2 Sep — a grant's user_id can be a real, valid registered user who
-      // simply never showed up in any of the three narrower "linked to THIS
-      // db" lookups above, and without this, that grant would permanently
-      // show as a bare UUID in Users & their access instead of an email.
-      // It is NOT a picker source any more: dbLinkedUsers()/pickableUsers()
-      // above are built from usersByOrg only, deliberately excluding this —
-      // Grant's User field must only offer people linked to a db this admin
-      // can see, never "anyone registered anywhere." Lowest priority in the
-      // users() merge below (pushed last) for the same reason.
-      const allUsers = await this.session.listAllUsers().catch((err) => {
-        this.usersDebugGlobal.set(`error: ${err?.message ?? err}`);
-        return [] as any[];
-      });
-      if (this.usersDebugGlobal() === '?') this.usersDebugGlobal.set(String(allUsers.length));
+      // REMOVED 2 Sep — this used to fetch session.listAllUsers(), the true
+      // cross-CLIENT directory (`_list_users`, every registered user on the
+      // whole platform, not just this company's), and fold it into users()
+      // as a "display resolution only, never a picker source" fallback.
+      // That reasoning doesn't hold: explicit direction is that one
+      // company's admin must never see another company's/client's emails
+      // ANYWHERE, including a resolved display label on an orphaned grant —
+      // "it's just for display" still means it rendered on screen. users()
+      // is now built from perOrgLists only, the exact same org-scoped data
+      // usersByOrg() already uses — an unresolvable grant now falls back to
+      // its bare id (userEmail()'s existing behaviour when nothing
+      // resolves) instead of ever reaching for the cross-client directory.
+      this.usersDebugGlobal.set('removed 2 Sep — no longer queried (cross-client leak)');
 
       // Raw shape of whatever the FIRST non-string entry we saw looked like,
       // across every source — shown in the UI (see the empty-state debug
@@ -801,13 +797,13 @@ export class StockAccessPanelComponent implements OnInit {
       // needing console access. If pickableUsers() is still empty after a
       // widened id-field match below, this is the next thing to check.
       if (!this.usersRawSample()) {
-        for (const list of [...perOrgLists, allUsers]) {
+        for (const list of perOrgLists) {
           const sample = Array.isArray(list) ? list.find((u) => typeof u === 'object' && u) : null;
           if (sample) { this.usersRawSample.set(JSON.stringify(sample).slice(0, 300)); break; }
         }
       }
 
-      this.users.set(StockAccessPanelComponent.mergeUserLists([...perOrgLists, allUsers]));
+      this.users.set(StockAccessPanelComponent.mergeUserLists(perOrgLists));
     } finally {
       this.usersLoading.set(false);
     }
