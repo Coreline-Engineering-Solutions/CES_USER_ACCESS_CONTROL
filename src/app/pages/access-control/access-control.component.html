@@ -59,6 +59,19 @@
         <div>
           <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Roles</h3>
           @if (canManageRoles()) {
+            @if (missingStandardRoles().length > 0) {
+              <div class="hiernote warn" style="margin-bottom:10px">
+                <span class="i">!</span>
+                <span>
+                  This database is missing the standard role{{ missingStandardRoles().length === 1 ? '' : 's' }}:
+                  <strong>{{ missingStandardRoles().join(', ') }}</strong>.
+                  <button class="btn" style="margin-left:8px;font-size:11px;padding:4px 9px" [disabled]="seedingRoles()" (click)="seedStandardRoles()">
+                    {{ seedingRoles() ? 'Creating…' : 'Create them' }}
+                  </button>
+                </span>
+              </div>
+            }
+            @if (seedResult()) { <div class="hiernote ok" style="margin-bottom:10px"><span class="i">✓</span><span>{{ seedResult() }}</span></div> }
             <div class="field-row" style="margin-bottom:10px">
               <div class="field"><input class="inp" [ngModel]="newRoleName()" (ngModelChange)="newRoleName.set($event)" placeholder="Role name"></div>
               <div class="field"><input class="inp" [ngModel]="newRoleUtility()" (ngModelChange)="newRoleUtility.set($event)" placeholder="Utility (default GIS System)"></div>
@@ -74,7 +87,12 @@
                   <tr>
                     <td>{{ r.role_name }}</td>
                     <td class="num">{{ r.utility_name }}</td>
-                    @if (canManageRoles()) { <td class="actions"><button class="btn" (click)="deleteRole(r)">Delete</button></td> }
+                    @if (canManageRoles()) {
+                      <td class="actions" style="white-space:nowrap">
+                        <button class="btn" (click)="openRolePrivileges(r)">Privileges</button>
+                        <button class="btn" (click)="deleteRole(r)">Delete</button>
+                      </td>
+                    }
                   </tr>
                 } @empty { <tr><td colspan="3" style="color:var(--gc-text-muted)">No roles yet.</td></tr> }
               </tbody>
@@ -164,22 +182,76 @@
         </div>
       }
 
-      <div class="tablewrap" style="margin-top:14px">
+      <div style="padding:18px 18px 0">
+        <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
+          Users on this database <span style="text-transform:none;letter-spacing:0">({{ userRows().length }})</span>
+        </h3>
+      </div>
+      <div class="tablewrap">
         <table>
-          <thead><tr><th>User GID</th><th>Role</th><th>Assigned by</th><th>Assigned</th>@if (canManageRoles()) { <th class="actions">Action</th> }</tr></thead>
+          <thead><tr><th>User</th><th>Roles</th>@if (canManageRoles()) { <th class="actions">Actions</th> }</tr></thead>
           <tbody>
-            @for (a of assignments(); track a.user_gid + a.role_gid) {
+            @for (row of userRows(); track row.email) {
               <tr>
-                <td class="num">{{ a.user_gid.slice(0, 8) }}…</td>
-                <td>{{ a.role_name }}</td>
-                <td class="num">{{ a.assigned_by }}</td>
-                <td class="num">{{ a.assigned_date | slice:0:10 }}</td>
-                @if (canManageRoles()) { <td class="actions"><button class="btn" (click)="openRevokeAssignment(a)">Revoke</button></td> }
+                <td>{{ row.email }}</td>
+                <td>
+                  @if (row.roles.length === 0) {
+                    <span style="color:var(--gc-text-muted)">— no role assigned</span>
+                  } @else {
+                    @for (a of row.roles; track a.role_gid) {
+                      <span class="pill" style="margin-right:6px">
+                        {{ a.role_name }}
+                        @if (canManageRoles()) {
+                          <button type="button"
+                                  title="Revoke this role"
+                                  style="background:none;border:0;color:inherit;cursor:pointer;padding:0 0 0 6px;opacity:.75"
+                                  [disabled]="rowRevoking() === row.email + '::' + a.role_gid"
+                                  (click)="revokeRoleFromUser(row.email, a)">✕</button>
+                        }
+                      </span>
+                    }
+                  }
+                </td>
+                @if (canManageRoles()) {
+                  <td class="actions" style="white-space:nowrap">
+                    <button class="btn" (click)="assignRoleTo(row.email)">Assign role</button>
+                  </td>
+                }
               </tr>
-            } @empty { <tr><td colspan="5" style="color:var(--gc-text-muted)">No user-role assignments yet.</td></tr> }
+            } @empty {
+              <tr><td colspan="3" style="color:var(--gc-text-muted)">No users linked to this database yet — use "+ Add user" above.</td></tr>
+            }
           </tbody>
         </table>
       </div>
+
+      @if (orphanAssignments().length > 0) {
+        <div style="padding:16px 18px 0">
+          <div class="hiernote warn">
+            <span class="i">!</span>
+            <span>
+              {{ orphanAssignments().length }} role assignment{{ orphanAssignments().length === 1 ? '' : 's' }} belong to
+              users who are not linked to this database. They still hold the role — review below.
+            </span>
+          </div>
+          <div class="tablewrap" style="margin-top:10px">
+            <table>
+              <thead><tr><th>User GID</th><th>Role</th><th>Assigned by</th><th>Assigned</th>@if (canManageRoles()) { <th class="actions">Action</th> }</tr></thead>
+              <tbody>
+                @for (a of orphanAssignments(); track a.user_gid + a.role_gid) {
+                  <tr>
+                    <td class="num">{{ a.user_gid.slice(0, 8) }}…</td>
+                    <td>{{ a.role_name }}</td>
+                    <td class="num">{{ a.assigned_by }}</td>
+                    <td class="num">{{ a.assigned_date | slice:0:10 }}</td>
+                    @if (canManageRoles()) { <td class="actions"><button class="btn" (click)="openRevokeAssignment(a)">Revoke</button></td> }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
 
       <div style="padding:18px;border-top:1px solid var(--gc-border);margin-top:10px">
         <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Permission check</h3>
@@ -291,6 +363,64 @@
         <button class="btn" (click)="closeAddUser()">Cancel</button>
         <button class="btn primary" style="margin-left:auto" [disabled]="creatingUser()" (click)="submitAddUser()">
           {{ creatingUser() ? 'Adding…' : 'Add user' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Link privileges to a role. Action panel, not a state editor - see
+     openRolePrivileges() in the component for why current mappings cannot
+     be shown yet. -->
+@if (privRoleTarget(); as role) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="Role privileges">
+    <div class="modal" style="width:640px">
+      <div class="m-h">
+        <h3>Privileges</h3><span class="no">{{ role.role_name }}</span>
+        <button class="x" (click)="closeRolePrivileges()" aria-label="Close">✕</button>
+      </div>
+      <div class="m-sec">
+        <div class="hiernote" style="margin:0 0 12px">
+          <span class="i">i</span>
+          <span>
+            The API can list every privilege and link/unlink them, but has no
+            "what is already on this role" endpoint yet — so this shows the full
+            list rather than pretending to reflect current state. Tick what you
+            want, then Link or Unlink. Re-linking something already linked is
+            harmless.
+          </span>
+        </div>
+        @if (privError()) { <div class="hiernote warn" style="margin:0 0 10px"><span class="i">!</span><span>{{ privError() }}</span></div> }
+        @if (privResult()) { <div class="hiernote ok" style="margin:0 0 10px"><span class="i">✓</span><span>{{ privResult() }}</span></div> }
+
+        <div class="field">
+          <input class="inp" [ngModel]="privSearch()" (ngModelChange)="privSearch.set($event)" placeholder="Filter privileges…">
+        </div>
+
+        <div style="max-height:320px;overflow:auto;border:1px solid var(--gc-border);border-radius:8px;padding:6px 10px">
+          @for (pv of filteredPrivileges(); track pv.privilege_gid) {
+            <label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;font-size:12.5px">
+              <input type="checkbox"
+                     [checked]="privSelection().has(pv.privilege_gid)"
+                     (change)="togglePrivSelection(pv.privilege_gid)">
+              <span style="font-family:monospace">{{ pv.privilege_name }}</span>
+              <span style="margin-left:auto;color:var(--gc-text-muted);font-size:11px">{{ pv.utility_name }}</span>
+            </label>
+          } @empty {
+            <p style="color:var(--gc-text-muted);font-size:12.5px;padding:8px 2px;margin:0">No privileges match.</p>
+          }
+        </div>
+        <div style="font-size:11px;color:var(--gc-text-muted);margin-top:8px">
+          {{ privSelection().size }} selected of {{ filteredPrivileges().length }} shown.
+        </div>
+      </div>
+      <div class="m-f">
+        <button class="btn" (click)="closeRolePrivileges()">Close</button>
+        <button class="btn" style="margin-left:auto" [disabled]="privBusy()" (click)="unlinkSelectedPrivileges()">
+          {{ privBusy() ? 'Working…' : 'Unlink selected' }}
+        </button>
+        <button class="btn primary" [disabled]="privBusy()" (click)="linkSelectedPrivileges()">
+          {{ privBusy() ? 'Working…' : 'Link selected' }}
         </button>
       </div>
     </div>

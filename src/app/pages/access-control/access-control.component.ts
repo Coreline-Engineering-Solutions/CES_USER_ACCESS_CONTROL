@@ -58,6 +58,126 @@ export class AccessControlComponent implements OnInit {
   readonly mapping = signal(false);
   readonly mapError = signal<string | null>(null);
 
+  // --- Standard roles per database ---------------------------------------
+  // Every client db is supposed to carry the same three GIS roles. Rather
+  // than each admin hand-typing them (and drifting on spelling, which then
+  // silently fails every downstream role-name match), this seeds whichever
+  // of the three are missing. Existing roles are left alone - additive,
+  // never a reset.
+  static readonly STANDARD_ROLES = ['Manager', 'Planner', 'Viewer'];
+  readonly seedingRoles = signal(false);
+  readonly seedResult = signal<string | null>(null);
+
+  readonly missingStandardRoles = computed<string[]>(() => {
+    const have = new Set(this.roles().map((r) => r.role_name.trim().toLowerCase()));
+    return AccessControlComponent.STANDARD_ROLES.filter((n) => !have.has(n.toLowerCase()));
+  });
+
+  async seedStandardRoles(): Promise<void> {
+    const missing = this.missingStandardRoles();
+    if (missing.length === 0) return;
+    this.seedingRoles.set(true);
+    this.seedResult.set(null);
+    const created: string[] = [];
+    const failed: string[] = [];
+    for (const name of missing) {
+      try {
+        await this.rolesApi.roleCreate({ role_name: name, utility_name: 'GIS System' });
+        created.push(name);
+      } catch (err: any) {
+        console.error('[AccessControl] seed role failed:', name, err);
+        failed.push(name);
+      }
+    }
+    await this.load();
+    this.seedingRoles.set(false);
+    this.seedResult.set(
+      failed.length === 0
+        ? 'Created ' + created.join(', ') + '.'
+        : 'Created ' + (created.join(', ') || 'none') + '; failed: ' + failed.join(', ') + '.',
+    );
+  }
+
+  // --- Per-role privilege linking -----------------------------------------
+  // The /roles/* surface has no "privileges for THIS role" endpoint - only
+  // "every privilege" (privilegesList) plus assign/revoke. So this is an
+  // ACTION panel, not a state toggle: tick privileges, then Link or Unlink.
+  // Deliberately NOT rendered as checkboxes-reflecting-current-state, which
+  // would be a lie about data we cannot read. Flagged to backend; the moment
+  // a per-role list endpoint exists this becomes a real two-way editor.
+  readonly privRoleTarget = signal<ClientRole | null>(null);
+  readonly privSelection = signal<Set<string>>(new Set());
+  readonly privSearch = signal('');
+  readonly privBusy = signal(false);
+  readonly privResult = signal<string | null>(null);
+  readonly privError = signal<string | null>(null);
+
+  readonly filteredPrivileges = computed<ClientPrivilege[]>(() => {
+    const q = this.privSearch().trim().toLowerCase();
+    const list = this.privileges();
+    if (!q) return list;
+    return list.filter(
+      (pv) => pv.privilege_name.toLowerCase().includes(q) || pv.utility_name.toLowerCase().includes(q),
+    );
+  });
+
+  openRolePrivileges(role: ClientRole): void {
+    this.privRoleTarget.set(role);
+    this.privSelection.set(new Set());
+    this.privSearch.set('');
+    this.privResult.set(null);
+    this.privError.set(null);
+  }
+
+  closeRolePrivileges(): void {
+    this.privRoleTarget.set(null);
+  }
+
+  togglePrivSelection(gid: string): void {
+    this.privSelection.update((set) => {
+      const next = new Set(set);
+      if (next.has(gid)) next.delete(gid);
+      else next.add(gid);
+      return next;
+    });
+  }
+
+  private async applyPrivileges(mode: 'link' | 'unlink'): Promise<void> {
+    const role = this.privRoleTarget();
+    const gids = Array.from(this.privSelection());
+    if (!role || gids.length === 0) {
+      this.privError.set('Pick at least one privilege.');
+      return;
+    }
+    this.privBusy.set(true);
+    this.privError.set(null);
+    this.privResult.set(null);
+    let ok = 0;
+    const failed: string[] = [];
+    for (const gid of gids) {
+      const name = this.privileges().find((pv) => pv.privilege_gid === gid)?.privilege_name ?? gid.slice(0, 8);
+      try {
+        if (mode === 'link') await this.rolesApi.privilegeAssign({ role_gid: role.role_gid, privilege_gid: gid });
+        else await this.rolesApi.privilegeRevoke({ role_gid: role.role_gid, privilege_gid: gid });
+        ok++;
+      } catch (err: any) {
+        console.error('[AccessControl] privilege ' + mode + ' failed:', name, err);
+        failed.push(name);
+      }
+    }
+    this.privBusy.set(false);
+    const verb = mode === 'link' ? 'Linked' : 'Unlinked';
+    this.privResult.set(
+      failed.length === 0
+        ? verb + ' ' + ok + ' privilege' + (ok === 1 ? '' : 's') + ' on ' + role.role_name + '.'
+        : verb + ' ' + ok + '; failed on ' + failed.join(', ') + '.',
+    );
+    this.privSelection.set(new Set());
+  }
+
+  linkSelectedPrivileges(): Promise<void> { return this.applyPrivileges('link'); }
+  unlinkSelectedPrivileges(): Promise<void> { return this.applyPrivileges('unlink'); }
+
   // ─── Add a user (create -> link to THIS db -> optional role) ────────────
   // The client admin's own user-management flow, mirroring AC's Users page
   // but scoped: a user created here is always linked to the database this
@@ -152,6 +272,59 @@ export class AccessControlComponent implements OnInit {
     } finally {
       this.creatingUser.set(false);
     }
+  }
+
+  // --- Users on this database, with their roles ---------------------------
+  // /roles/users/list only carries user_gid, which on its own is unusable in
+  // a UI ("who is 3f2a8c1e?"). DbUsersService has the gid->email mapping for
+  // this db, so join them here: every db-linked user, their assigned roles,
+  // and a revoke that no longer needs the admin to retype the email to prove
+  // who they meant.
+  readonly userRows = computed(() => {
+    const rolesByGid = new Map<string, UserRoleAssignment[]>();
+    for (const a of this.assignments()) {
+      const key = String(a.user_gid ?? '').toLowerCase();
+      const list = rolesByGid.get(key) ?? [];
+      list.push(a);
+      rolesByGid.set(key, list);
+    }
+    return this.dbUsers.users().map((u) => ({
+      email: u.email,
+      user_gid: u.user_gid,
+      roles: rolesByGid.get(String(u.user_gid ?? '').toLowerCase()) ?? [],
+    }));
+  });
+
+  /** Assignments whose user_gid matches nobody linked to this db - surfaced
+   *  separately rather than hidden, since a role still assigned to someone
+   *  no longer on the database is exactly what an access review needs to
+   *  see. */
+  readonly orphanAssignments = computed<UserRoleAssignment[]>(() => {
+    const known = new Set(this.dbUsers.users().map((u) => String(u.user_gid ?? '').toLowerCase()));
+    return this.assignments().filter((a) => !known.has(String(a.user_gid ?? '').toLowerCase()));
+  });
+
+  /** Revoke straight from a user row - the email is already known here, so
+   *  no confirm-by-retyping step (that modal only exists because the raw
+   *  assignments list has no email to work from). */
+  readonly rowRevoking = signal<string>('');
+
+  async revokeRoleFromUser(email: string, a: UserRoleAssignment): Promise<void> {
+    this.rowRevoking.set(email + '::' + a.role_gid);
+    try {
+      await this.rolesApi.userRoleRevoke({ user_email: email, role_gid: a.role_gid });
+      await this.load();
+    } catch (err: any) {
+      console.error('[AccessControl] revoke role failed:', err);
+      this.error.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to revoke role');
+    } finally {
+      this.rowRevoking.set('');
+    }
+  }
+
+  /** Pre-fills the assign form below the table for one user. */
+  assignRoleTo(email: string): void {
+    this.assignEmail.set(email);
   }
 
   // ─── User-role assignments ──────────────────────────────────────────────
