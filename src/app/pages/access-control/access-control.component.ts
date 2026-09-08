@@ -437,6 +437,11 @@ export class AccessControlComponent implements OnInit {
   openAccessModal(email: string): void {
     this.toolsetError.set(null);
     this.accessModalEmail.set(email);
+    // The platform utility list is only needed to populate the picker, which
+    // only exists inside this modal — so it is fetched here rather than on
+    // page load. loadAvailable() caches, so reopening costs nothing.
+    void this.userUtils.loadAvailable();
+    void this.loadToolsetsFor(email);
   }
 
   closeAccessModal(): void {
@@ -451,21 +456,37 @@ export class AccessControlComponent implements OnInit {
     return this.userRows().find((r) => r.email === email) ?? null;
   });
 
-  /** Load the granted toolsets for every user on this database, in parallel. */
-  private async loadToolsets(): Promise<void> {
-    const rows = this.userRows();
-    if (rows.length === 0) return;
-    const pairs = await Promise.all(
-      rows.map(async (r) => {
-        try {
-          return [r.email, await this.userUtils.utilitiesFor(r.email)] as const;
-        } catch {
-          // One user failing to resolve must not blank the whole column.
-          return [r.email, this.userToolsets()[r.email] ?? []] as const;
-        }
-      }),
-    );
-    this.userToolsets.set(Object.fromEntries(pairs));
+  /** True while one user's toolsets are being fetched for the modal. */
+  readonly toolsetsLoading = signal(false);
+
+  /**
+   * Load ONE user's toolsets, on demand.
+   *
+   * This used to fan out with Promise.all across every user on the database
+   * — 19 users meant 19 simultaneous POSTs to the auth API on every page
+   * load, on top of _available_utilities, /auth/db/current and
+   * /auth/access. That is the auth service EVERY CES app validates its
+   * sessions against, so saturating it did not just slow this page down: it
+   * timed out session checks platform-wide and signed people out of other
+   * tools entirely. The empty-list retry added for the sign-out fix then
+   * doubled /auth/access under exactly the load that caused it — the same
+   * self-amplifying shape as a retry storm.
+   *
+   * Nobody needs 19 users' toolsets to look at one. The modal is the only
+   * place the detail is shown, so the fetch belongs there: one call, when
+   * asked for.
+   */
+  private async loadToolsetsFor(email: string): Promise<void> {
+    if (!email) return;
+    this.toolsetsLoading.set(true);
+    try {
+      const list = await this.userUtils.utilitiesFor(email);
+      this.userToolsets.update((m) => ({ ...m, [email]: list }));
+    } catch (e: any) {
+      this.toolsetError.set(e?.message ?? 'Could not load this user\'s toolsets.');
+    } finally {
+      this.toolsetsLoading.set(false);
+    }
   }
 
   async grantToolset(email: string): Promise<void> {
@@ -585,10 +606,10 @@ export class AccessControlComponent implements OnInit {
   ngOnInit(): void {
     void this.load();
     void this.session.hasPrivilege('_manage_client_roles').then((v) => this.canManageRoles.set(v));
-    // Toolsets: the platform list, then each user's grants once the db-linked
-    // user list has actually arrived (loadToolsets reads userRows()).
-    void this.userUtils.loadAvailable();
-    void this.dbUsers.ensureLoaded().then(() => this.loadToolsets());
+    // Toolsets are NOT loaded here. See loadToolsetsFor() — doing it per user
+    // on page load put ~20 simultaneous requests on the shared auth service
+    // and took session validation down platform-wide.
+    void this.dbUsers.ensureLoaded();
   }
 
   setTab(t: Tab): void {

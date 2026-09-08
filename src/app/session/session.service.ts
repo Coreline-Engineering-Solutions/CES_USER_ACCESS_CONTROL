@@ -101,14 +101,13 @@ export class SessionService {
       // a 5xx body) comes back as an empty array WITHOUT throwing. It never
       // reaches the catch below, so the optimistic-session rescue there does
       // not apply.
-      if (!Array.isArray(accessList) || accessList.length === 0) {
-        await new Promise((r) => setTimeout(r, 1200));
-        try {
-          accessList = await withTimeout(service.fetchAccessList(), 20000);
-        } catch {
-          // Keep whatever we had; the guard below decides.
-        }
-      }
+      // Deliberately NOT retried. An empty list only happens when auth is
+      // already struggling, so a retry adds load at precisely the moment
+      // load is the problem — the same self-amplifying shape as a retry
+      // storm, and this app talks to the auth service every CES tool
+      // depends on. The fail-open below already prevents the sign-out that
+      // the retry was protecting against; the worst a single empty read now
+      // costs is a Projects tab that needs a refresh.
 
       this.accessList.set(accessList || []);
 

@@ -209,15 +209,12 @@
                      at all. The dropdown only ever offers toolsets this
                      manager holds themselves. -->
                 <td class="toolsets-cell">
+                  <!-- No count: knowing it for every row would mean fetching
+                       every row's toolsets up front, which is what saturated
+                       the auth service. The detail loads when asked for. -->
                   <button type="button" class="pill toolset-count"
                           [title]="'View and edit access for ' + row.email"
-                          (click)="openAccessModal(row.email)">
-                    @if (toolsetsFor(row.email).length; as n) {
-                      {{ n }} tool{{ n === 1 ? '' : 's' }}
-                    } @else {
-                      no tools
-                    }
-                  </button>
+                          (click)="openAccessModal(row.email)">View access</button>
                 </td>
                 @if (canManageRoles()) {
                   <td class="actions" style="white-space:nowrap">
@@ -469,6 +466,9 @@
           What appears on their CES_WEB dashboard. Separate from roles &mdash; a role says what
           they may do inside a tool, a toolset is whether they can reach it at all.
         </p>
+        @if (toolsetsLoading()) {
+          <p class="acc-note">Loading&hellip;</p>
+        }
         <div class="toolset-pills">
           @for (u of toolsetsFor(arow.email); track u) {
             <span class="pill toolset-pill">
