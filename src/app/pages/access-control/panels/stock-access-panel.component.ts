@@ -396,7 +396,7 @@ export class StockAccessPanelComponent implements OnInit {
     try {
       // Re-fetch rather than trusting navbar's earlier load — "currently in
       // use" should mean live-current, not whatever was true on page load.
-      const db = await this.session.fetchCurrentDb();
+      const db = await this.session.ensureCurrentDb();
       const dbGid = String(db?.db_gid ?? db?.global_id ?? db?.gid ?? '').trim();
       if (dbGid) {
         this.orgDraftClientDbGid.set(dbGid);

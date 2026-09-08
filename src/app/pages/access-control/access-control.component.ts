@@ -8,6 +8,7 @@ import { AdminUsersService, NewUserDraft } from '../../services/admin-users.serv
 import { ClientRolesService } from '../../services/client-roles.service';
 import { ClientRole, UserRoleAssignment } from '../../services/roles.types';
 import { AccessProject, PROJECT_REGISTRY } from './project-registry';
+import { UserUtilitiesService, utilityKey } from '../../services/user-utilities.service';
 import { UserDirectoryPanelComponent } from './panels/user-directory-panel.component';
 
 type Tab = 'projects' | 'roles' | 'users' | 'directory';
@@ -20,6 +21,7 @@ type Tab = 'projects' | 'roles' | 'users' | 'directory';
 })
 export class AccessControlComponent implements OnInit {
   private readonly rolesApi = inject(RolesApiService);
+  readonly userUtils = inject(UserUtilitiesService);
   readonly session = inject(SessionService);
   readonly dbUsers = inject(DbUsersService); // template reads dbUsers.users() for email dropdowns
   private readonly adminUsers = inject(AdminUsersService);
@@ -32,14 +34,57 @@ export class AccessControlComponent implements OnInit {
   readonly canManageRoles = signal(false); // _manage_client_roles — /roles/* writes
 
   // ─── Projects (dynamic — see project-registry.ts) ───────────────────────
-  readonly projects: AccessProject[] = PROJECT_REGISTRY;
-  readonly selectedProjectId = signal<string>(PROJECT_REGISTRY[0]?.id ?? '');
+  /**
+   * Only the toolsets this manager actually holds.
+   *
+   * Every panel used to render for every user, so a manager with only Modules
+   * still saw Stock Manager and GIS Projects tabs. The grant buttons inside
+   * were disabled and the API refused the calls, but the surface was visible —
+   * which leaks which systems exist and reads as a broken tool rather than as
+   * "not yours". System Managers keep the full list, matching the bypass they
+   * get everywhere else.
+   *
+   * Returns [] while the session is still resolving. accessList and
+   * isSystemManager are both populated by validate(), so filtering before it
+   * finishes would render every tab and then remove them — a flash of tools
+   * the user does not have is worse than a beat of nothing.
+   */
+  readonly projects = computed<AccessProject[]>(() => {
+    if (this.session.loading()) return [];
+    if (this.session.isSystemManager()) return PROJECT_REGISTRY;
+
+    const mine = new Set(
+      (this.session.accessList() ?? [])
+        .map((e: any) => utilityKey(typeof e === 'string' ? e : e?.utility_name ?? e?.name))
+        .filter(Boolean),
+    );
+    return PROJECT_REGISTRY.filter((p) => mine.has(utilityKey(p.utility)));
+  });
+
+  /** True once we know the answer and it is "none" — lets the template explain
+   *  an empty Projects tab instead of showing a blank panel area. */
+  readonly hasNoProjects = computed(
+    () => !this.session.loading() && this.projects().length === 0,
+  );
+
+  private readonly manualProjectId = signal<string>('');
+
+  /** The chosen panel, falling back to the first one this manager can see.
+   *  Without the fallback, a stored/default id that has been filtered out
+   *  would leave the tab strip rendered with no panel under it. */
+  readonly selectedProjectId = computed<string>(() => {
+    const list = this.projects();
+    if (list.length === 0) return '';
+    const manual = this.manualProjectId();
+    return list.some((p) => p.id === manual) ? manual : list[0].id;
+  });
+
   readonly selectedProject = computed<AccessProject | null>(
-    () => this.projects.find((p) => p.id === this.selectedProjectId()) ?? null,
+    () => this.projects().find((p) => p.id === this.selectedProjectId()) ?? null,
   );
 
   selectProject(id: string): void {
-    this.selectedProjectId.set(id);
+    this.manualProjectId.set(id);
   }
 
   // ─── Client roles/privileges ────────────────────────────────────────────
@@ -338,6 +383,101 @@ export class AccessControlComponent implements OnInit {
   // this db, so join them here: every db-linked user, their assigned roles,
   // and a revoke that no longer needs the admin to retype the email to prove
   // who they meant.
+  // ─── Toolsets (CES_WEB dashboard access) ─────────────────────────────────
+  //
+  // Granting someone module/stock/GIS access from the Projects tab gives them
+  // permission INSIDE a tool. It does not give them the tool: the dashboard
+  // builds its tiles from the auth API's utility_list, so without a utility
+  // row the user has access to something they can neither see nor reach.
+  // This is where that row gets created.
+  //
+  // The dropdown is fed by UserUtilitiesService.assignable(), which is the
+  // manager's OWN toolsets intersected with the platform list — a manager can
+  // only ever hand out what they hold themselves. The service re-checks on
+  // write, because a filtered dropdown is a convenience, not a boundary.
+
+  /** email -> utilities currently granted. */
+  readonly userToolsets = signal<Record<string, string[]>>({});
+  /** email -> the toolset picked in that row's dropdown. */
+  readonly toolsetPick = signal<Record<string, string>>({});
+  /** email::utility currently being written, to disable just that control. */
+  readonly toolsetBusy = signal<string>('');
+  readonly toolsetError = signal<string | null>(null);
+
+  toolsetsFor(email: string): string[] {
+    return this.userToolsets()[email] ?? [];
+  }
+
+  /** Toolsets this manager can still add to that user (already-granted removed). */
+  addableToolsetsFor(email: string): string[] {
+    const has = new Set(this.toolsetsFor(email).map(utilityKey));
+    return this.userUtils.assignable().filter((u) => !has.has(utilityKey(u)));
+  }
+
+  pickToolset(email: string, utility: string): void {
+    this.toolsetPick.update((m) => ({ ...m, [email]: utility }));
+  }
+
+  /** Load the granted toolsets for every user on this database, in parallel. */
+  private async loadToolsets(): Promise<void> {
+    const rows = this.userRows();
+    if (rows.length === 0) return;
+    const pairs = await Promise.all(
+      rows.map(async (r) => {
+        try {
+          return [r.email, await this.userUtils.utilitiesFor(r.email)] as const;
+        } catch {
+          // One user failing to resolve must not blank the whole column.
+          return [r.email, this.userToolsets()[r.email] ?? []] as const;
+        }
+      }),
+    );
+    this.userToolsets.set(Object.fromEntries(pairs));
+  }
+
+  async grantToolset(email: string): Promise<void> {
+    const utility = (this.toolsetPick()[email] ?? '').trim();
+    if (!utility) return;
+    this.toolsetError.set(null);
+    this.toolsetBusy.set(`${email}::${utility}`);
+    try {
+      const ok = await this.userUtils.assign(email, utility);
+      if (!ok) throw new Error('The auth API did not confirm the change.');
+      // Optimistic local update — a full reload of every user's utilities to
+      // reflect one grant is a lot of round trips for a known outcome.
+      this.userToolsets.update((m) => ({
+        ...m,
+        [email]: [...(m[email] ?? []), utility],
+      }));
+      this.toolsetPick.update((m) => ({ ...m, [email]: '' }));
+    } catch (e: any) {
+      this.toolsetError.set(e?.message ?? `Could not grant ${utility} to ${email}.`);
+    } finally {
+      this.toolsetBusy.set('');
+    }
+  }
+
+  async revokeToolset(email: string, utility: string): Promise<void> {
+    this.toolsetError.set(null);
+    this.toolsetBusy.set(`${email}::${utility}`);
+    try {
+      const ok = await this.userUtils.remove(email, utility);
+      if (!ok) throw new Error('The auth API did not confirm the change.');
+      this.userToolsets.update((m) => ({
+        ...m,
+        [email]: (m[email] ?? []).filter((u) => utilityKey(u) !== utilityKey(utility)),
+      }));
+    } catch (e: any) {
+      this.toolsetError.set(e?.message ?? `Could not revoke ${utility} from ${email}.`);
+    } finally {
+      this.toolsetBusy.set('');
+    }
+  }
+
+  isToolsetBusy(email: string, utility: string): boolean {
+    return this.toolsetBusy() === `${email}::${utility}`;
+  }
+
   readonly userRows = computed(() => {
     const rolesByGid = new Map<string, UserRoleAssignment[]>();
     for (const a of this.assignments()) {
@@ -410,7 +550,10 @@ export class AccessControlComponent implements OnInit {
   ngOnInit(): void {
     void this.load();
     void this.session.hasPrivilege('_manage_client_roles').then((v) => this.canManageRoles.set(v));
-    void this.dbUsers.ensureLoaded();
+    // Toolsets: the platform list, then each user's grants once the db-linked
+    // user list has actually arrived (loadToolsets reads userRows()).
+    void this.userUtils.loadAvailable();
+    void this.dbUsers.ensureLoaded().then(() => this.loadToolsets());
   }
 
   setTab(t: Tab): void {

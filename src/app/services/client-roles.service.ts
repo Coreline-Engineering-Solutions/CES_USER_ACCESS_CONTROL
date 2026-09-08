@@ -59,7 +59,7 @@ export class ClientRolesService {
     let name = pick(db);
     if (!name) {
       try {
-        db = await this.session.fetchCurrentDb();
+        db = await this.session.ensureCurrentDb();
         name = pick(db);
       } catch {
         /* fall through to the gid lookup below */

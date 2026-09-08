@@ -24,6 +24,16 @@ export interface AccessProject {
   label: string;
   hint: string;
   component: Type<unknown>;
+  /**
+   * The CES_WEB utility this panel administers. The shell shows a panel only
+   * when the signed-in manager holds this utility themselves (System Managers
+   * see everything) — a manager should not be handed the administration
+   * surface for a tool their company does not run.
+   *
+   * These strings are compared NORMALISED (underscores/spacing/case ignored),
+   * so 'Manager Portal' also matches 'manager_portal'.
+   */
+  utility: string;
 }
 
 export const PROJECT_REGISTRY: AccessProject[] = [
@@ -32,17 +42,21 @@ export const PROJECT_REGISTRY: AccessProject[] = [
     label: 'Stock Manager',
     hint: 'Warehouses, stockpiles and bootstock.',
     component: StockAccessPanelComponent,
+    utility: 'Stock Manager',
   },
   {
     id: 'modules',
     label: 'Modules',
     hint: 'Per-module manager / contributor / viewer access.',
     component: ModulesAccessPanelComponent,
+    // CES_MODULES is the Manager Portal on the dashboard.
+    utility: 'Manager Portal',
   },
   {
     id: 'gis',
     label: 'GIS Projects',
     hint: 'Binary project membership. Gated by GIS System Manager only.',
     component: GisAccessPanelComponent,
+    utility: 'GIS System',
   },
 ];

@@ -21,7 +21,7 @@
        component; nothing here changes. -->
   @if (activeTab() === 'projects') {
     <div class="project-switch" role="tablist">
-      @for (p of projects; track p.id) {
+      @for (p of projects(); track p.id) {
         <button
           class="project-chip"
           [class.on]="selectedProjectId() === p.id"
@@ -34,8 +34,16 @@
 
     @if (selectedProject(); as sp) {
       <ng-container [ngComponentOutlet]="sp.component" />
+    } @else if (hasNoProjects()) {
+      <!-- Deliberately explicit: an empty Projects tab is a permissions
+           outcome, not a missing feature, and saying so stops managers
+           reporting it as a broken page. -->
+      <div style="padding:24px 18px;color:var(--gc-text-muted);line-height:1.6">
+        No toolsets are assigned to your account, so there is nothing here to administer.<br>
+        You can only manage access for tools you hold yourself &mdash; ask a system manager to grant you the toolset first.
+      </div>
     } @else {
-      <div style="padding:24px 18px;color:var(--gc-text-muted)">No projects registered yet.</div>
+      <div style="padding:24px 18px;color:var(--gc-text-muted)">Loading your toolsets&hellip;</div>
     }
   }
 
@@ -171,10 +179,13 @@
         <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
           Users on this database <span style="text-transform:none;letter-spacing:0">({{ userRows().length }})</span>
         </h3>
+        @if (toolsetError()) {
+          <div class="hiernote warn" style="margin:0 0 10px"><span class="i">!</span><span>{{ toolsetError() }}</span></div>
+        }
       </div>
       <div class="tablewrap">
         <table>
-          <thead><tr><th>User</th><th>Roles</th>@if (canManageRoles()) { <th class="actions">Actions</th> }</tr></thead>
+          <thead><tr><th>User</th><th>Roles</th><th>Toolsets</th>@if (canManageRoles()) { <th class="actions">Actions</th> }</tr></thead>
           <tbody>
             @for (row of userRows(); track row.email) {
               <tr>
@@ -197,6 +208,43 @@
                     }
                   }
                 </td>
+                <!-- Toolsets = the tiles this user gets on the CES_WEB
+                     dashboard. Separate from roles: a role says what they may
+                     do inside a tool, a toolset is whether they can reach it
+                     at all. The dropdown only ever offers toolsets this
+                     manager holds themselves. -->
+                <td>
+                  @for (u of toolsetsFor(row.email); track u) {
+                    <span class="pill" style="margin-right:6px">
+                      {{ u }}
+                      @if (userUtils.canAssign(u)) {
+                        <button type="button"
+                                title="Remove this toolset — they lose the tile on the dashboard"
+                                style="background:none;border:0;color:inherit;cursor:pointer;padding:0 0 0 6px;opacity:.75"
+                                [disabled]="isToolsetBusy(row.email, u)"
+                                (click)="revokeToolset(row.email, u)">&#10005;</button>
+                      }
+                    </span>
+                  } @empty {
+                    <span style="color:var(--gc-text-muted)">&mdash; no tools</span>
+                  }
+
+                  @if (addableToolsetsFor(row.email).length > 0) {
+                    <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+                      <select class="sel" style="max-width:190px"
+                              [ngModel]="toolsetPick()[row.email] ?? ''"
+                              (ngModelChange)="pickToolset(row.email, $event)">
+                        <option value="">&mdash; add a tool &mdash;</option>
+                        @for (u of addableToolsetsFor(row.email); track u) {
+                          <option [value]="u">{{ u }}</option>
+                        }
+                      </select>
+                      <button class="btn"
+                              [disabled]="!(toolsetPick()[row.email]) || toolsetBusy().startsWith(row.email + '::')"
+                              (click)="grantToolset(row.email)">Add</button>
+                    </div>
+                  }
+                </td>
                 @if (canManageRoles()) {
                   <td class="actions" style="white-space:nowrap">
                     <button class="btn" (click)="assignRoleTo(row.email)">Assign role</button>
@@ -204,7 +252,7 @@
                 }
               </tr>
             } @empty {
-              <tr><td colspan="3" style="color:var(--gc-text-muted)">No users linked to this database yet — use "+ Add user" above.</td></tr>
+              <tr><td colspan="4" style="color:var(--gc-text-muted)">No users linked to this database yet — use "+ Add user" above.</td></tr>
             }
           </tbody>
         </table>

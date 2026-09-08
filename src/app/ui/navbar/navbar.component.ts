@@ -25,7 +25,9 @@ export class NavbarComponent implements OnInit {
       void this.session.fetchProfileImage();
     }
     await this.session.fetchDatabases();
-    await this.session.fetchCurrentDb();
+    // Shared with every other consumer — whoever asks first pays for the
+    // fetch, the rest await the same promise.
+    await this.session.ensureCurrentDb();
   }
 
   toggleProfileMenu(): void {

@@ -132,7 +132,7 @@ export class AdminUsersService {
     const fromCache = String(cached?.db_gid ?? cached?.global_id ?? cached?.gid ?? '').trim();
     if (fromCache) return fromCache;
     try {
-      const db = await this.session.fetchCurrentDb();
+      const db = await this.session.ensureCurrentDb();
       return String(db?.db_gid ?? db?.global_id ?? db?.gid ?? '').trim();
     } catch {
       return '';

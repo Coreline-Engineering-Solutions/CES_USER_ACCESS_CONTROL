@@ -49,16 +49,39 @@ export class DbUsersService {
    *  current db's linked users. Idempotent for the same db — safe to call
    *  from every panel's ngOnInit without duplicating fetches. */
   ensureLoaded(): Promise<void> {
-    const dbGid = this.activeDbGid();
-    if (!dbGid) {
-      this.users.set([]);
-      return Promise.resolve();
-    }
-    if (dbGid === this.lastDbGid && this.users().length > 0) return Promise.resolve();
+    // Resolve the active db FIRST rather than sampling it.
+    //
+    // This used to read currentDb() synchronously and, when it was not set
+    // yet, clear the user list and return — permanently, because nothing
+    // called ensureLoaded again. On bootstrap currentDb is populated by the
+    // navbar's own async ngOnInit, so a page component's ngOnInit reliably
+    // lost that race and every user/role dropdown on the page came up empty
+    // after a database switch.
     if (this.inflight) return this.inflight;
 
     this.loading.set(true);
-    this.inflight = Promise.all([
+    this.inflight = this.session
+      .ensureCurrentDb()
+      .then(() => this.loadForActiveDb())
+      .finally(() => {
+        this.loading.set(false);
+        this.inflight = null;
+      });
+    return this.inflight;
+  }
+
+  /** The actual load, once the active db is known. */
+  private async loadForActiveDb(): Promise<void> {
+    const dbGid = this.activeDbGid();
+    if (!dbGid) {
+      // Genuinely no active database (not merely "not resolved yet") — an
+      // empty list is the honest answer.
+      this.users.set([]);
+      return;
+    }
+    if (dbGid === this.lastDbGid && this.users().length > 0) return;
+
+    return Promise.all([
       this.stockAccess.dbUsersList(dbGid).catch(() => null),
       this.session.dbUsersList(dbGid).catch(() => [] as any[]),
     ])
@@ -70,12 +93,7 @@ export class DbUsersService {
         const authList: any[] = Array.isArray(authRes) ? authRes : [];
         this.lastDbGid = dbGid;
         this.users.set(DbUsersService.scopeToAuthMembership(authList, gisList));
-      })
-      .finally(() => {
-        this.loading.set(false);
-        this.inflight = null;
       });
-    return this.inflight;
   }
 
   /** Force a reload even if this db was already loaded — e.g. after the

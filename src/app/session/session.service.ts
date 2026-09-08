@@ -94,8 +94,19 @@ export class SessionService {
       const accessList = await withTimeout(service.fetchAccessList(), 20000);
       this.accessList.set(accessList || []);
 
-      const toolNames = (accessList || []).map((item: any) => item?.utility_name).filter(Boolean);
-      const hasAccess = !requiredTool || toolNames.includes(requiredTool);
+      // Compare on a NORMALISED key, not raw equality. The auth API is not
+      // consistent about separators — the same utility appears as
+      // "User Access Control" and "User_Access_Control" depending on the
+      // caller — and CES_WEB's dashboard already normalises for exactly this
+      // reason (utilitiesMatch/normalizeUtilityKey). An exact-match check here
+      // would lock every user out of the tool the moment the API returned the
+      // other spelling, which is a far worse failure than the gap it closes.
+      const norm = (v: unknown): string =>
+        String(v ?? '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      const toolKeys = (accessList || [])
+        .map((item: any) => norm(typeof item === 'string' ? item : item?.utility_name ?? item?.name))
+        .filter(Boolean);
+      const hasAccess = !requiredTool || toolKeys.includes(norm(requiredTool));
 
       if (hasAccess) {
         this.session.set({ session_gid, email: user_email, user_gid: userGid });
@@ -294,6 +305,35 @@ export class SessionService {
   // DbUsersService (services/db-users.service.ts) — every dropdown in this
   // app is meant to offer users linked to the CURRENTLY ACTIVE db, not the
   // full system-wide list, so that's what lives there now instead.
+
+  private currentDbInflight: Promise<any> | null = null;
+
+  /**
+   * The active database, fetching it once if it has not been resolved yet.
+   *
+   * `currentDb` is NOT populated by validate() — the only thing that fetched
+   * it on bootstrap was the navbar's own ngOnInit. Anything else that needed
+   * the active db therefore raced a network call it did not start: page
+   * components run their ngOnInit before that fetch resolves, read a null
+   * currentDb, and (in DbUsersService's case) gave up permanently. That is
+   * why the user/role lists came up empty after a database switch and only
+   * filled in after a manual refresh — a refresh loses the same race just as
+   * often, which is what made it look intermittent rather than broken.
+   *
+   * Callers await this instead of sampling the signal. Concurrent callers
+   * share one in-flight request, so every panel calling it on init costs a
+   * single fetch.
+   */
+  async ensureCurrentDb(): Promise<any> {
+    const existing = this.currentDb();
+    if (existing) return existing;
+    if (this.currentDbInflight) return this.currentDbInflight;
+
+    this.currentDbInflight = this.fetchCurrentDb().finally(() => {
+      this.currentDbInflight = null;
+    });
+    return this.currentDbInflight;
+  }
 
   async fetchCurrentDb(): Promise<any> {
     const sess = this.session();
