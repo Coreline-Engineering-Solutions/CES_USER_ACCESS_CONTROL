@@ -9,14 +9,21 @@ import { ClientRolesService } from '../../services/client-roles.service';
 import { ClientRole, UserRoleAssignment } from '../../services/roles.types';
 import { AccessProject, PROJECT_REGISTRY } from './project-registry';
 import { UserUtilitiesService, utilityKey } from '../../services/user-utilities.service';
-import { UserDirectoryPanelComponent } from './panels/user-directory-panel.component';
 
-type Tab = 'projects' | 'roles' | 'users' | 'directory';
+/**
+ * Tab order mirrors how the page is actually used: assign the user first,
+ * then give them project access, then manage the role vocabulary behind it.
+ *
+ * 'directory' (the old "All access" tab) is gone — it listed the same
+ * user->access picture the User assignments tab already shows, so it was two
+ * places telling the same story, which invites them to disagree.
+ */
+type Tab = 'users' | 'projects' | 'roles';
 
 @Component({
   selector: 'app-access-control',
   standalone: true,
-  imports: [FormsModule, SlicePipe, NgComponentOutlet, UserDirectoryPanelComponent],
+  imports: [FormsModule, SlicePipe, NgComponentOutlet],
   templateUrl: './access-control.component.html',
 })
 export class AccessControlComponent implements OnInit {
@@ -27,7 +34,7 @@ export class AccessControlComponent implements OnInit {
   private readonly adminUsers = inject(AdminUsersService);
   private readonly clientRoles = inject(ClientRolesService);
 
-  readonly activeTab = signal<Tab>('projects');
+  readonly activeTab = signal<Tab>('users');
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
 
