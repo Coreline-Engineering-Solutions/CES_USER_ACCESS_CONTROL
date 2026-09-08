@@ -594,9 +594,34 @@ td.actions .btn + .btn { margin-left: 6px; }
    made the table twice as tall as it needed to be. */
 
 .toolsets-cell {
-  /* Wide enough for a user with many tools to wrap sensibly, capped so the
-     column cannot push Actions off the right of the table. */
-  max-width: 460px;
+  /* Just a count button now - the detail lives in the access modal, so this
+     column no longer competes with the others for width. */
+  white-space: nowrap;
+  width: 1%;
+}
+
+.toolset-count {
+  cursor: pointer;
+  text-transform: none;
+  color: #7ba3f2;
+  border-color: rgba(37, 99, 235, 0.4);
+
+  &:hover { border-color: var(--gc-accent); filter: brightness(1.15); }
+}
+
+.acc-h {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--gc-text-muted);
+  margin: 0 0 8px;
+}
+
+.acc-note {
+  font-size: 11.5px;
+  color: var(--gc-text-muted);
+  line-height: 1.5;
+  margin: 0 0 10px;
 }
 
 .toolset-pills {
@@ -627,16 +652,6 @@ td.actions .btn + .btn { margin-left: 6px; }
 
   &:hover:not(:disabled) { opacity: 1; color: var(--gc-error); }
   &:disabled { cursor: default; opacity: .3; }
-}
-
-.toolset-add {
-  cursor: pointer;
-  font-weight: 600;
-  line-height: 1;
-  padding: 2.5px 8px;
-  color: var(--gc-text-muted);
-
-  &:hover { color: var(--gc-accent); border-color: var(--gc-accent); }
 }
 
 .toolset-picker {

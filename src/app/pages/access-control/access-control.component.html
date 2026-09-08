@@ -214,45 +214,15 @@
                      at all. The dropdown only ever offers toolsets this
                      manager holds themselves. -->
                 <td class="toolsets-cell">
-                  <div class="toolset-pills">
-                    @for (u of toolsetsFor(row.email); track u) {
-                      <span class="pill toolset-pill">
-                        {{ u }}
-                        @if (userUtils.canAssign(u)) {
-                          <button type="button"
-                                  class="pill-x"
-                                  title="Remove this toolset — they lose the tile on the dashboard"
-                                  [disabled]="isToolsetBusy(row.email, u)"
-                                  (click)="revokeToolset(row.email, u)">&#10005;</button>
-                        }
-                      </span>
-                    } @empty {
-                      <span style="color:var(--gc-text-muted)">&mdash; no tools</span>
+                  <button type="button" class="pill toolset-count"
+                          [title]="'View and edit access for ' + row.email"
+                          (click)="openAccessModal(row.email)">
+                    @if (toolsetsFor(row.email).length; as n) {
+                      {{ n }} tool{{ n === 1 ? '' : 's' }}
+                    } @else {
+                      no tools
                     }
-
-                    @if (addableToolsetsFor(row.email).length > 0 && toolsetEditing() !== row.email) {
-                      <button type="button" class="pill toolset-add"
-                              title="Add a toolset"
-                              (click)="openToolsetPicker(row.email)">+</button>
-                    }
-                  </div>
-
-                  @if (toolsetEditing() === row.email) {
-                    <div class="toolset-picker">
-                      <select class="sel"
-                              [ngModel]="toolsetPick()[row.email] ?? ''"
-                              (ngModelChange)="pickToolset(row.email, $event)">
-                        <option value="">&mdash; select &mdash;</option>
-                        @for (u of addableToolsetsFor(row.email); track u) {
-                          <option [value]="u">{{ u }}</option>
-                        }
-                      </select>
-                      <button class="btn primary"
-                              [disabled]="!(toolsetPick()[row.email]) || toolsetBusy().startsWith(row.email + '::')"
-                              (click)="grantToolset(row.email)">Add</button>
-                      <button class="btn" (click)="closeToolsetPicker()">Cancel</button>
-                    </div>
-                  }
+                  </button>
                 </td>
                 @if (canManageRoles()) {
                   <td class="actions" style="white-space:nowrap">
@@ -469,6 +439,80 @@
                 [disabled]="privBusy() || privLoading() || !privDirty()" (click)="saveRolePrivileges()">
           {{ privBusy() ? 'Saving…' : 'Save changes' }}
         </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Access detail: everything granted to one user, in one place. Roles are
+     read-only here (they are managed from the row's Assign role action);
+     toolsets are editable, bounded by what this manager holds themselves. -->
+@if (accessModalRow(); as arow) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="User access">
+    <div class="modal" style="width:560px;max-width:calc(100vw - 32px)">
+      <div class="m-h">
+        <h3>{{ arow.email }}</h3>
+        <button class="x" (click)="closeAccessModal()" aria-label="Close">&#10005;</button>
+      </div>
+
+      <div class="m-sec">
+        @if (toolsetError()) {
+          <div class="hiernote warn"><span class="i">!</span><span>{{ toolsetError() }}</span></div>
+        }
+
+        <h4 class="acc-h">Roles on this database</h4>
+        <div class="toolset-pills" style="margin-bottom:16px">
+          @for (a of arow.roles; track a.role_gid) {
+            <span class="pill toolset-pill">{{ a.role_name }}</span>
+          } @empty {
+            <span style="color:var(--gc-text-muted);font-size:12px">&mdash; no role assigned</span>
+          }
+        </div>
+
+        <h4 class="acc-h">Toolsets</h4>
+        <p class="acc-note">
+          What appears on their CES_WEB dashboard. Separate from roles &mdash; a role says what
+          they may do inside a tool, a toolset is whether they can reach it at all.
+        </p>
+        <div class="toolset-pills">
+          @for (u of toolsetsFor(arow.email); track u) {
+            <span class="pill toolset-pill">
+              {{ u }}
+              @if (userUtils.canAssign(u)) {
+                <button type="button" class="pill-x"
+                        title="Remove — they lose this tile on the dashboard"
+                        [disabled]="isToolsetBusy(arow.email, u)"
+                        (click)="revokeToolset(arow.email, u)">&#10005;</button>
+              }
+            </span>
+          } @empty {
+            <span style="color:var(--gc-text-muted);font-size:12px">&mdash; no tools</span>
+          }
+        </div>
+
+        @if (addableToolsetsFor(arow.email).length > 0) {
+          <div class="toolset-picker">
+            <select class="sel"
+                    [ngModel]="toolsetPick()[arow.email] ?? ''"
+                    (ngModelChange)="pickToolset(arow.email, $event)">
+              <option value="">&mdash; add a toolset &mdash;</option>
+              @for (u of addableToolsetsFor(arow.email); track u) {
+                <option [value]="u">{{ u }}</option>
+              }
+            </select>
+            <button class="btn primary"
+                    [disabled]="!(toolsetPick()[arow.email]) || toolsetBusy().startsWith(arow.email + '::')"
+                    (click)="grantToolset(arow.email)">Add</button>
+          </div>
+        } @else {
+          <p class="acc-note" style="margin-top:10px">
+            Nothing left to add &mdash; you can only grant toolsets you hold yourself.
+          </p>
+        }
+      </div>
+
+      <div class="m-f">
+        <button class="btn" style="margin-left:auto" (click)="closeAccessModal()">Done</button>
       </div>
     </div>
   </div>

@@ -402,11 +402,15 @@ export class AccessControlComponent implements OnInit {
   readonly toolsetPick = signal<Record<string, string>>({});
   /** email::utility currently being written, to disable just that control. */
   readonly toolsetBusy = signal<string>('');
-  /** The one row whose add-a-tool control is open. Rendering a select in
-   *  every row doubled the height of all 19 of them and put 19 dropdowns on
-   *  the page for one occasional action; the pills are the information, the
-   *  picker is the exception. */
-  readonly toolsetEditing = signal<string>('');
+  /** The user whose access modal is open ('' = closed).
+   *
+   *  Access lives in a modal rather than in the table. Inline pills read fine
+   *  for two tools and fall apart at ten: the column either stretches and
+   *  pushes Actions off the edge, or stays narrow and stacks every pill onto
+   *  its own line, making one user twelve rows tall. The table now carries a
+   *  count, and the detail — plus every add/remove control — opens on
+   *  demand. */
+  readonly accessModalEmail = signal<string>('');
   readonly toolsetError = signal<string | null>(null);
 
   toolsetsFor(email: string): string[] {
@@ -423,14 +427,22 @@ export class AccessControlComponent implements OnInit {
     this.toolsetPick.update((m) => ({ ...m, [email]: utility }));
   }
 
-  openToolsetPicker(email: string): void {
+  openAccessModal(email: string): void {
     this.toolsetError.set(null);
-    this.toolsetEditing.set(email);
+    this.accessModalEmail.set(email);
   }
 
-  closeToolsetPicker(): void {
-    this.toolsetEditing.set('');
+  closeAccessModal(): void {
+    this.accessModalEmail.set('');
   }
+
+  /** The table row for the user whose modal is open — gives the modal their
+   *  roles as well as their toolsets, so it is one place to read access. */
+  readonly accessModalRow = computed(() => {
+    const email = this.accessModalEmail();
+    if (!email) return null;
+    return this.userRows().find((r) => r.email === email) ?? null;
+  });
 
   /** Load the granted toolsets for every user on this database, in parallel. */
   private async loadToolsets(): Promise<void> {
@@ -463,8 +475,9 @@ export class AccessControlComponent implements OnInit {
         ...m,
         [email]: [...(m[email] ?? []), utility],
       }));
+      // Modal stays open — granting several toolsets in a row is the common
+      // case, and closing after each one would make that tedious.
       this.toolsetPick.update((m) => ({ ...m, [email]: '' }));
-      this.closeToolsetPicker();
     } catch (e: any) {
       this.toolsetError.set(e?.message ?? `Could not grant ${utility} to ${email}.`);
     } finally {
