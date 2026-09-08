@@ -91,7 +91,25 @@ export class SessionService {
         }
       }
 
-      const accessList = await withTimeout(service.fetchAccessList(), 20000);
+      let accessList = await withTimeout(service.fetchAccessList(), 20000);
+
+      // An empty list is INCONCLUSIVE, not a denial — retry once before
+      // treating it as an answer.
+      //
+      // fetchAccessList() does `data?.utility_list || []`, so an error
+      // response (`{detail: "User not logged in."}`, an auth-service timeout,
+      // a 5xx body) comes back as an empty array WITHOUT throwing. It never
+      // reaches the catch below, so the optimistic-session rescue there does
+      // not apply.
+      if (!Array.isArray(accessList) || accessList.length === 0) {
+        await new Promise((r) => setTimeout(r, 1200));
+        try {
+          accessList = await withTimeout(service.fetchAccessList(), 20000);
+        } catch {
+          // Keep whatever we had; the guard below decides.
+        }
+      }
+
       this.accessList.set(accessList || []);
 
       // Compare on a NORMALISED key, not raw equality. The auth API is not
@@ -106,7 +124,25 @@ export class SessionService {
       const toolKeys = (accessList || [])
         .map((item: any) => norm(typeof item === 'string' ? item : item?.utility_name ?? item?.name))
         .filter(Boolean);
-      const hasAccess = !requiredTool || toolKeys.includes(norm(requiredTool));
+
+      // Deny only on a POSITIVE answer that the tool is absent.
+      //
+      // A still-empty list after the retry means the auth service could not
+      // tell us anything, and signing someone out because a dependency was
+      // briefly unhealthy is a worse failure than the gap this leaves. The
+      // gap is also close to theoretical: a user with genuinely zero
+      // utilities cannot reach this app from the dashboard in the first
+      // place, since the dashboard builds its tiles from this same list.
+      const listResolved = toolKeys.length > 0;
+      const hasAccess = !requiredTool || !listResolved || toolKeys.includes(norm(requiredTool));
+
+      if (!listResolved && requiredTool) {
+        console.warn(
+          '[Session] Access list came back empty twice — keeping the session rather than ' +
+          'signing out on an inconclusive answer. The utility check for ' +
+          `"${requiredTool}" did not run.`
+        );
+      }
 
       if (hasAccess) {
         this.session.set({ session_gid, email: user_email, user_gid: userGid });
