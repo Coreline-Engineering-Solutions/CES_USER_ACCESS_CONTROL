@@ -213,35 +213,44 @@
                      do inside a tool, a toolset is whether they can reach it
                      at all. The dropdown only ever offers toolsets this
                      manager holds themselves. -->
-                <td>
-                  @for (u of toolsetsFor(row.email); track u) {
-                    <span class="pill" style="margin-right:6px">
-                      {{ u }}
-                      @if (userUtils.canAssign(u)) {
-                        <button type="button"
-                                title="Remove this toolset — they lose the tile on the dashboard"
-                                style="background:none;border:0;color:inherit;cursor:pointer;padding:0 0 0 6px;opacity:.75"
-                                [disabled]="isToolsetBusy(row.email, u)"
-                                (click)="revokeToolset(row.email, u)">&#10005;</button>
-                      }
-                    </span>
-                  } @empty {
-                    <span style="color:var(--gc-text-muted)">&mdash; no tools</span>
-                  }
+                <td class="toolsets-cell">
+                  <div class="toolset-pills">
+                    @for (u of toolsetsFor(row.email); track u) {
+                      <span class="pill toolset-pill">
+                        {{ u }}
+                        @if (userUtils.canAssign(u)) {
+                          <button type="button"
+                                  class="pill-x"
+                                  title="Remove this toolset — they lose the tile on the dashboard"
+                                  [disabled]="isToolsetBusy(row.email, u)"
+                                  (click)="revokeToolset(row.email, u)">&#10005;</button>
+                        }
+                      </span>
+                    } @empty {
+                      <span style="color:var(--gc-text-muted)">&mdash; no tools</span>
+                    }
 
-                  @if (addableToolsetsFor(row.email).length > 0) {
-                    <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
-                      <select class="sel" style="max-width:190px"
+                    @if (addableToolsetsFor(row.email).length > 0 && toolsetEditing() !== row.email) {
+                      <button type="button" class="pill toolset-add"
+                              title="Add a toolset"
+                              (click)="openToolsetPicker(row.email)">+</button>
+                    }
+                  </div>
+
+                  @if (toolsetEditing() === row.email) {
+                    <div class="toolset-picker">
+                      <select class="sel"
                               [ngModel]="toolsetPick()[row.email] ?? ''"
                               (ngModelChange)="pickToolset(row.email, $event)">
-                        <option value="">&mdash; add a tool &mdash;</option>
+                        <option value="">&mdash; select &mdash;</option>
                         @for (u of addableToolsetsFor(row.email); track u) {
                           <option [value]="u">{{ u }}</option>
                         }
                       </select>
-                      <button class="btn"
+                      <button class="btn primary"
                               [disabled]="!(toolsetPick()[row.email]) || toolsetBusy().startsWith(row.email + '::')"
                               (click)="grantToolset(row.email)">Add</button>
+                      <button class="btn" (click)="closeToolsetPicker()">Cancel</button>
                     </div>
                   }
                 </td>

@@ -402,6 +402,11 @@ export class AccessControlComponent implements OnInit {
   readonly toolsetPick = signal<Record<string, string>>({});
   /** email::utility currently being written, to disable just that control. */
   readonly toolsetBusy = signal<string>('');
+  /** The one row whose add-a-tool control is open. Rendering a select in
+   *  every row doubled the height of all 19 of them and put 19 dropdowns on
+   *  the page for one occasional action; the pills are the information, the
+   *  picker is the exception. */
+  readonly toolsetEditing = signal<string>('');
   readonly toolsetError = signal<string | null>(null);
 
   toolsetsFor(email: string): string[] {
@@ -416,6 +421,15 @@ export class AccessControlComponent implements OnInit {
 
   pickToolset(email: string, utility: string): void {
     this.toolsetPick.update((m) => ({ ...m, [email]: utility }));
+  }
+
+  openToolsetPicker(email: string): void {
+    this.toolsetError.set(null);
+    this.toolsetEditing.set(email);
+  }
+
+  closeToolsetPicker(): void {
+    this.toolsetEditing.set('');
   }
 
   /** Load the granted toolsets for every user on this database, in parallel. */
@@ -450,6 +464,7 @@ export class AccessControlComponent implements OnInit {
         [email]: [...(m[email] ?? []), utility],
       }));
       this.toolsetPick.update((m) => ({ ...m, [email]: '' }));
+      this.closeToolsetPicker();
     } catch (e: any) {
       this.toolsetError.set(e?.message ?? `Could not grant ${utility} to ${email}.`);
     } finally {
