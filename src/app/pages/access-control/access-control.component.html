@@ -97,11 +97,28 @@
         @if (canManageRoles() && showCreateRole()) {
           <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
             <div class="field" style="flex:1 1 200px;margin:0"><label>Role name</label><input class="inp" [ngModel]="newRoleName()" (ngModelChange)="newRoleName.set($event)" placeholder="e.g. Surveyor"></div>
-            <div class="field" style="flex:1 1 180px;margin:0"><label>Utility</label><input class="inp" [ngModel]="newRoleUtility()" (ngModelChange)="newRoleUtility.set($event)" placeholder="GIS System"></div>
+            <div class="field" style="flex:1 1 200px;margin:0">
+              <label>Utility</label>
+              <select class="sel" [ngModel]="newRoleUtility()" (ngModelChange)="newRoleUtility.set($event)">
+                @for (u of utilityOptions(); track u) { <option [value]="u">{{ u }}</option> }
+              </select>
+            </div>
             <button class="btn primary" style="margin-bottom:2px" [disabled]="creatingRole()" (click)="createRole()">{{ creatingRole() ? 'Creating…' : 'Create' }}</button>
           </div>
           @if (roleError()) { <div class="hiernote warn" style="margin-bottom:10px"><span class="i">!</span><span>{{ roleError() }}</span></div> }
         }
+
+        <!-- Utility filter: the point of this tab is now cross-system, so
+             narrowing to one system is the common first move. -->
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap">
+          <div class="field" style="flex:0 1 240px;margin:0">
+            <label>Show roles for</label>
+            <select class="sel" [ngModel]="roleUtilityFilter()" (ngModelChange)="roleUtilityFilter.set($event)">
+              <option value="">All systems</option>
+              @for (u of utilityOptions(); track u) { <option [value]="u">{{ u }}</option> }
+            </select>
+          </div>
+        </div>
 
         <!-- Scrolls internally rather than growing the page - a db with
              dozens of roles keeps the filter and header in view. -->

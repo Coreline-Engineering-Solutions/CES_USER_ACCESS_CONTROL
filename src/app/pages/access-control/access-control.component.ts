@@ -109,13 +109,47 @@ export class AccessControlComponent implements OnInit {
   readonly showCreateRole = signal(false);
   readonly filteredRoles = computed<ClientRole[]>(() => {
     const q = this.roleSearch().trim().toLowerCase();
-    const list = this.roles();
+    const util = this.roleUtilityFilter();
+    let list = this.roles();
+    // Utility filter first — it is the coarse cut, and the text search should
+    // then apply within the chosen system rather than across all of them.
+    if (util) {
+      const k = utilityKey(util);
+      list = list.filter((r) => utilityKey(r.utility_name) === k);
+    }
     if (!q) return list;
     return list.filter((r) => r.role_name.toLowerCase().includes(q) || r.utility_name.toLowerCase().includes(q));
   });
 
   readonly newRoleName = signal('');
   readonly newRoleUtility = signal('GIS System');
+  /** Utility filter for the roles table — "swap between systems" without
+   *  retyping a search term. '' = show every utility. */
+  readonly roleUtilityFilter = signal('');
+
+  /**
+   * Options for the Utility dropdowns.
+   *
+   * Sourced from the platform's own _available_utilities rather than a
+   * hardcoded list, so a new CES tool appears here the moment it exists
+   * without a frontend change. Utilities already used by roles on THIS
+   * database are merged in, so a role created against a utility the auth API
+   * no longer returns still shows its own value instead of silently
+   * collapsing to the first option.
+   */
+  readonly utilityOptions = computed<string[]>(() => {
+    const seen = new Map<string, string>();
+    for (const u of this.userUtils.available()) {
+      const k = utilityKey(u);
+      if (k && !seen.has(k)) seen.set(k, u);
+    }
+    for (const r of this.roles()) {
+      const name = String(r?.utility_name ?? '').trim();
+      const k = utilityKey(name);
+      if (k && !seen.has(k)) seen.set(k, name);
+    }
+    return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+  });
   readonly creatingRole = signal(false);
   readonly roleError = signal<string | null>(null);
 
@@ -614,6 +648,10 @@ export class AccessControlComponent implements OnInit {
 
   setTab(t: Tab): void {
     this.activeTab.set(t);
+    // Only the roles tab needs the utility catalogue, and loadAvailable()
+    // caches — so this stays one request, made when it is actually used
+    // rather than on every page load (see the auth-load fix in 36e02d8).
+    if (t === 'roles') void this.userUtils.loadAvailable();
   }
 
   async load(): Promise<void> {
