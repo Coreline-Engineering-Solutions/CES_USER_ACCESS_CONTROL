@@ -244,6 +244,17 @@
           }
         </div>
 
+        <div class="field">
+          <label>Coordinates <span style="color:var(--gc-text-muted);font-weight:400">— optional</span></label>
+          <div style="display:flex;gap:8px">
+            <input class="inp" inputmode="decimal" [ngModel]="locDraftLon()" (ngModelChange)="locDraftLon.set($event)" placeholder="Longitude e.g. 18.6241">
+            <input class="inp" inputmode="decimal" [ngModel]="locDraftLat()" (ngModelChange)="locDraftLat.set($event)" placeholder="Latitude e.g. -33.8688">
+          </div>
+          <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">
+            Where the location physically is. Leave blank to set it later in Stock Manager.
+          </div>
+        </div>
+
         @if (locDraftType() === 'stockpile') {
           <div class="field">
             <label>Project <span class="req" title="Required for stockpiles — the GIS project this stockpile belongs to.">*</span></label>

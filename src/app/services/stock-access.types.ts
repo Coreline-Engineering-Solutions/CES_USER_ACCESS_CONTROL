@@ -9,6 +9,12 @@ export type LocationStatus = 'active' | 'frozen' | 'closed';
 export type AccessScope = 'location' | 'org' | 'client';
 export type AccessRole = 'auditor' | 'controller' | 'custodian' | 'receiver' | 'operator' | 'viewer';
 
+/** Matches CES_STOCK_MANAGER's GeoPoint — a location's pin. */
+export interface GeoPoint {
+  type: 'Point';
+  coordinates: [number, number];
+}
+
 export interface StockLocation {
   global_id: string;
   org_id: string;
@@ -17,6 +23,10 @@ export interface StockLocation {
   name: string;
   custodian_user_id: string | null;
   status: LocationStatus;
+  /** Present in CES_STOCK_MANAGER's own StockLocation and was missing here,
+   *  so this app could not see a location's coordinates at all. */
+  geom?: GeoPoint | null;
+  geom_source?: 'gps' | 'last_stock_location' | 'manual' | null;
 }
 
 /** Mirrors CES_STOCK_MANAGER's LocationCreatePayload (stock.types.ts) — same
@@ -30,6 +40,12 @@ export interface LocationCreatePayload {
   location_type: LocationType;
   project_id?: string | null;
   custodian_user_id?: string | null;
+  /** Coordinates. CES_STOCK_MANAGER declares these on its own create payload
+   *  but only ever populates them from its EDIT screen — so a location
+   *  created here had no pin and no way to give it one without switching
+   *  apps, since this app deliberately does not wrap locationUpdate. */
+  geom?: GeoPoint | null;
+  geom_source?: 'gps' | 'last_stock_location' | 'manual' | null;
 }
 
 export interface LocationAccessGrant {
@@ -71,5 +87,8 @@ export interface OrgRow {
   global_id?: string;
   name: string;
   client_db_gid: string;
+  /** Declared on CES_STOCK_MANAGER's OrgRow; neither app reads it yet, but
+   *  the two declarations should not disagree. */
+  status?: string;
   [key: string]: unknown;
 }

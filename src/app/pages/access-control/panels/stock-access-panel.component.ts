@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { TitleCasePipe } from '@angular/common';
 import { StockAccessApiService } from '../../../services/stock-access-api.service';
 import { SessionService } from '../../../session/session.service';
-import { AccessRole, AccessScope, LocationAccessGrant, LocationType, OrgRow, StockLocation, StockUserRef } from '../../../services/stock-access.types';
+import { AccessRole, AccessScope, GeoPoint, LocationAccessGrant, LocationType, OrgRow, StockLocation, StockUserRef } from '../../../services/stock-access.types';
 
 /** One user, plus every grant they currently hold in this project. */
 interface UserGrantGroup {
@@ -469,6 +469,11 @@ export class StockAccessPanelComponent implements OnInit {
    *  available (already loaded per-org by loadUsers() above); falls back to
    *  a manual UUID field the same way the org picker does when empty. */
   readonly locDraftCustodianUserId = signal('');
+  /** Optional pin for the new location. Same field pair and the same
+   *  validation as CES_STOCK_MANAGER's edit screen, so a location created
+   *  here is indistinguishable from one created and then positioned there. */
+  readonly locDraftLon = signal('');
+  readonly locDraftLat = signal('');
   readonly locCreating = signal(false);
   readonly locCreateError = signal<string | null>(null);
 
@@ -480,6 +485,8 @@ export class StockAccessPanelComponent implements OnInit {
     this.locDraftOrgId.set(orgId ?? (this.orgs().length === 1 ? this.orgs()[0].org_id : ''));
     this.locDraftProjectId.set('');
     this.locDraftCustodianUserId.set('');
+    this.locDraftLon.set('');
+    this.locDraftLat.set('');
     this.locCreateError.set(null);
     this.showCreateLocationModal.set(true);
   }
@@ -519,6 +526,28 @@ export class StockAccessPanelComponent implements OnInit {
       this.locCreateError.set('Bootstock requires a custodian user.');
       return;
     }
+    // Coordinates are optional, but if either box has something in it BOTH
+    // must be valid — half a pin is worse than none, and the backend would
+    // store a point at the equator rather than reject it. Bounds and message
+    // wording match CES_STOCK_MANAGER's submitEdit() so the same mistake
+    // reads the same way in both apps.
+    const lonStr = this.locDraftLon().trim();
+    const latStr = this.locDraftLat().trim();
+    let geom: GeoPoint | null = null;
+    if (lonStr !== '' || latStr !== '') {
+      const lon = Number(lonStr);
+      const lat = Number(latStr);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+        this.locCreateError.set('Longitude and latitude must both be numbers.');
+        return;
+      }
+      if (lon < -180 || lon > 180 || lat < -90 || lat > 90) {
+        this.locCreateError.set('Longitude must be between -180 and 180, latitude between -90 and 90.');
+        return;
+      }
+      geom = { type: 'Point', coordinates: [lon, lat] };
+    }
+
     this.locCreating.set(true);
     this.locCreateError.set(null);
     try {
@@ -528,6 +557,9 @@ export class StockAccessPanelComponent implements OnInit {
         location_type: type,
         project_id: type === 'stockpile' ? this.locDraftProjectId().trim() : null,
         custodian_user_id: type === 'bootstock' ? this.locDraftCustodianUserId().trim() : null,
+        // Only sent when the user actually entered a pin. 'manual' matches
+        // what Stock Manager stamps for hand-typed coordinates.
+        ...(geom ? { geom, geom_source: 'manual' as const } : {}),
       });
       this.showCreateLocationModal.set(false);
       // Lightweight refresh — just the locations list, not the whole panel
