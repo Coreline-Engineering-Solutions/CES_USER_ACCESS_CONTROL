@@ -341,8 +341,13 @@
             <label>Location</label>
             <select class="sel" [ngModel]="grantLocationId()" (ngModelChange)="grantLocationId.set($event)">
               <option value="">— select —</option>
-              @for (loc of locations(); track loc.global_id) { <option [value]="loc.global_id">{{ loc.name }}</option> }
+              @for (loc of grantLocations(); track loc.global_id) { <option [value]="loc.global_id">{{ loc.name }}</option> }
             </select>
+            @if (activeDbGid() && !grantLocations().length) {
+              <div style="font-size:10.5px;color:var(--gc-text-muted);margin-top:4px">
+                No locations on this database yet — create one, or switch databases.
+              </div>
+            }
           </div>
         }
         @if (grantScope() === 'org') {

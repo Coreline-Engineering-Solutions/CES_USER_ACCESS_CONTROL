@@ -599,6 +599,27 @@ export class StockAccessPanelComponent implements OnInit {
   readonly grantLocationId = signal('');
   readonly grantOrgId = signal('');
 
+  /** gid of the database the navbar switcher currently points at. `org_id`
+   *  in the stock schema IS a client_db_gid, so this doubles as "the active
+   *  org". Empty until the session has resolved a current db. */
+  readonly activeDbGid = computed<string>(() => {
+    const db = this.session.currentDb();
+    return String(db?.db_gid ?? db?.global_id ?? db?.gid ?? '').trim();
+  });
+
+  /** Locations the grant modal offers: only those belonging to the ACTIVE
+   *  database, not every location across every client this admin can see.
+   *  `locationsList()` is system-wide; the grant flow works one client at a
+   *  time via the navbar db switcher. Falls back to the full list only if
+   *  the active db isn't known yet, so the picker is never empty for the
+   *  wrong reason. */
+  readonly grantLocations = computed<StockLocation[]>(() => {
+    const all = this.locations();
+    const dbGid = this.activeDbGid();
+    if (!dbGid) return all;
+    return all.filter((l) => l.org_id === dbGid);
+  });
+
   /** The ONE org relevant to the grant currently being set up — 'org' scope
    *  uses grantOrgId directly, 'location' scope derives it from the
    *  selected location's own org_id. 'client' scope has no single org by
@@ -669,6 +690,9 @@ export class StockAccessPanelComponent implements OnInit {
   ngOnInit(): void {
     void this.load();
     void this.session.hasPrivilege('_stock_admin').then((v) => this.canAdmin.set(v));
+    // validate() doesn't populate currentDb — make sure it's resolved so
+    // activeDbGid()/grantLocations() can scope the grant picker to this db.
+    if (!this.activeDbGid()) void this.session.ensureCurrentDb();
   }
 
   async load(): Promise<void> {
