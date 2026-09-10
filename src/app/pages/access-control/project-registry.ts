@@ -49,8 +49,12 @@ export const PROJECT_REGISTRY: AccessProject[] = [
     label: 'Modules',
     hint: 'Per-module manager / contributor / viewer access.',
     component: ModulesAccessPanelComponent,
-    // CES_MODULES is the Manager Portal on the dashboard.
-    utility: 'Manager Portal',
+    // Confirmed with gustav 2026-09-10: CES_MODULES is its own utility,
+    // 'Modules' (gid 410748cb-f469-41f6-86f8-8b33e23b7f5e). 'Manager Portal'
+    // and 'Project Portal' are projects that have not been started, so this
+    // panel was gated on a utility nobody can hold — only System Managers,
+    // who bypass the check, ever saw it.
+    utility: 'Modules',
   },
   {
     id: 'gis',
