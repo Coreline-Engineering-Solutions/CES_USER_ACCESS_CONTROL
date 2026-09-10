@@ -245,13 +245,51 @@
         </div>
 
         <div class="field">
-          <label>Coordinates <span style="color:var(--gc-text-muted);font-weight:400">— optional</span></label>
-          <div style="display:flex;gap:8px">
+          <label>Location on the map <span style="color:var(--gc-text-muted);font-weight:400">— optional</span></label>
+          <div style="position:relative">
+            <input
+              class="inp"
+              type="text"
+              autocomplete="off"
+              [ngModel]="locPlaceQuery()"
+              (ngModelChange)="onPlaceQuery($event)"
+              (focus)="locPlaceResults().length && locPlaceOpen.set(true)"
+              placeholder="Search a place or address — e.g. Durbanville, Cape Town">
+            @if (locPlaceSearching()) {
+              <span style="position:absolute;right:10px;top:9px;font-size:11px;color:var(--gc-text-muted)">searching…</span>
+            }
+            @if (locPlaceOpen() && locPlaceResults().length) {
+              <div style="position:absolute;z-index:20;left:0;right:0;top:calc(100% + 2px);max-height:220px;overflow:auto;background:var(--gc-surface,#fff);border:1px solid var(--gc-border,#d0d5dd);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12)">
+                @for (hit of locPlaceResults(); track hit.label) {
+                  <button type="button"
+                    style="display:block;width:100%;text-align:left;padding:8px 10px;border:0;background:transparent;cursor:pointer;font-size:12.5px;line-height:1.35"
+                    (mouseenter)="$event.currentTarget && ($any($event.currentTarget).style.background = 'var(--gc-hover,#f2f4f7)')"
+                    (mouseleave)="$event.currentTarget && ($any($event.currentTarget).style.background = 'transparent')"
+                    (click)="pickPlace(hit)">
+                    <strong>{{ hit.name }}</strong>
+                    <span style="color:var(--gc-text-muted);display:block;font-size:11px">{{ hit.label }}</span>
+                  </button>
+                }
+              </div>
+            }
+          </div>
+
+          @if (locPlaceError()) {
+            <div style="font-size:11px;color:var(--gc-danger,#b42318);margin-top:5px">{{ locPlaceError() }}</div>
+          }
+          @if (locPlacePicked()) {
+            <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">
+              📍 {{ locPlacePicked() }}
+              <button type="button" style="border:0;background:transparent;color:var(--gc-link,#175cd3);cursor:pointer;padding:0 0 0 6px;font-size:11px" (click)="clearPlace()">clear</button>
+            </div>
+          }
+
+          <div style="display:flex;gap:8px;margin-top:8px">
             <input class="inp" inputmode="decimal" [ngModel]="locDraftLon()" (ngModelChange)="locDraftLon.set($event)" placeholder="Longitude e.g. 18.6241">
             <input class="inp" inputmode="decimal" [ngModel]="locDraftLat()" (ngModelChange)="locDraftLat.set($event)" placeholder="Latitude e.g. -33.8688">
           </div>
           <div style="font-size:11px;color:var(--gc-text-muted);margin-top:5px">
-            Where the location physically is. Leave blank to set it later in Stock Manager.
+            Pick from the search above, or type the coordinates directly. Leave blank to set it later in Stock Manager.
           </div>
         </div>
 

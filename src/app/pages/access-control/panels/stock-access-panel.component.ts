@@ -4,6 +4,7 @@ import { TitleCasePipe } from '@angular/common';
 import { StockAccessApiService } from '../../../services/stock-access-api.service';
 import { SessionService } from '../../../session/session.service';
 import { AccessRole, AccessScope, GeoPoint, LocationAccessGrant, LocationType, OrgRow, StockLocation, StockUserRef } from '../../../services/stock-access.types';
+import { PlaceSearchService, PlaceHit } from '../../../services/place-search.service';
 
 /** One user, plus every grant they currently hold in this project. */
 interface UserGrantGroup {
@@ -51,6 +52,7 @@ const ORG_LABEL_OVERRIDES: Record<string, string> = {
 export class StockAccessPanelComponent implements OnInit {
   private readonly stockAccess = inject(StockAccessApiService);
   private readonly session = inject(SessionService);
+  private readonly placeSearch = inject(PlaceSearchService);
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -477,6 +479,70 @@ export class StockAccessPanelComponent implements OnInit {
   readonly locCreating = signal(false);
   readonly locCreateError = signal<string | null>(null);
 
+  // ─── Place search (populates the coordinate fields) ─────────────────────
+  // Type a place name, pick a hit, and its lon/lat drop into locDraftLon/Lat
+  // — the submit path is unchanged, this is just a friendlier way to fill
+  // them than hand-typing decimals. Manual entry still works underneath.
+  readonly locPlaceQuery = signal('');
+  readonly locPlaceResults = signal<PlaceHit[]>([]);
+  readonly locPlaceSearching = signal(false);
+  readonly locPlaceError = signal<string | null>(null);
+  readonly locPlacePicked = signal<string>(''); // label of the chosen place, '' = none
+  readonly locPlaceOpen = signal(false); // dropdown visibility
+  private locPlaceDebounce: ReturnType<typeof setTimeout> | null = null;
+  private locPlaceAbort: AbortController | null = null;
+
+  onPlaceQuery(v: string): void {
+    this.locPlaceQuery.set(v);
+    this.locPlacePicked.set('');
+    this.locPlaceError.set(null);
+    if (this.locPlaceDebounce) clearTimeout(this.locPlaceDebounce);
+    if (v.trim().length < 3) {
+      this.locPlaceResults.set([]);
+      this.locPlaceOpen.set(false);
+      return;
+    }
+    this.locPlaceDebounce = setTimeout(() => void this.runPlaceSearch(v), 350);
+  }
+
+  private async runPlaceSearch(v: string): Promise<void> {
+    this.locPlaceAbort?.abort();
+    const ac = new AbortController();
+    this.locPlaceAbort = ac;
+    this.locPlaceSearching.set(true);
+    this.locPlaceError.set(null);
+    try {
+      const hits = await this.placeSearch.search(v, ac.signal);
+      if (ac.signal.aborted) return;
+      this.locPlaceResults.set(hits);
+      this.locPlaceOpen.set(true);
+    } catch (e: any) {
+      if (ac.signal.aborted) return;
+      this.locPlaceResults.set([]);
+      this.locPlaceError.set(e?.message ?? 'Place search failed — enter coordinates manually.');
+    } finally {
+      if (this.locPlaceAbort === ac) this.locPlaceSearching.set(false);
+    }
+  }
+
+  pickPlace(hit: PlaceHit): void {
+    this.locDraftLon.set(String(hit.lon));
+    this.locDraftLat.set(String(hit.lat));
+    this.locPlacePicked.set(hit.label);
+    this.locPlaceQuery.set(hit.name);
+    this.locPlaceResults.set([]);
+    this.locPlaceOpen.set(false);
+  }
+
+  clearPlace(): void {
+    this.locPlaceQuery.set('');
+    this.locPlacePicked.set('');
+    this.locPlaceResults.set([]);
+    this.locPlaceOpen.set(false);
+    this.locDraftLon.set('');
+    this.locDraftLat.set('');
+  }
+
   /** orgId pre-fills the organisation field when opened from a specific
    *  org's card — mirrors openGrant(orgId?) below. */
   openCreateLocation(orgId?: string): void {
@@ -487,6 +553,8 @@ export class StockAccessPanelComponent implements OnInit {
     this.locDraftCustodianUserId.set('');
     this.locDraftLon.set('');
     this.locDraftLat.set('');
+    this.clearPlace();
+    this.locPlaceError.set(null);
     this.locCreateError.set(null);
     this.showCreateLocationModal.set(true);
   }
