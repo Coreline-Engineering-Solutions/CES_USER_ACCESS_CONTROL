@@ -2,8 +2,36 @@ import { Injectable, inject } from '@angular/core';
 import axios, { AxiosInstance } from 'axios';
 import { SessionService } from '../session/session.service';
 import { environment } from '../../environments/environment';
-import { LocationAccessGrant, LocationAccessGrantPayload, LocationCreatePayload, OrgCreatePayload, OrgRow, StockLocation } from './stock-access.types';
+import { GeoPoint, LocationAccessGrant, LocationAccessGrantPayload, LocationCreatePayload, LocationStatus, LocationType, OrgCreatePayload, OrgRow, StockLocation } from './stock-access.types';
 import { scrubTechnicalIds } from './error-scrub.util';
+
+/** Ported verbatim from CES_STOCK_MANAGER's stock-api.service.ts so both
+ *  apps read a location's pin identically. `/stock/locations/list` returns
+ *  the point either as `geom` or as a stringified GeoJSON in `geom_json`,
+ *  and sometimes as a raw string — this coerces all of that to a validated
+ *  { type:'Point', coordinates:[lon,lat] } or null. UAC previously read
+ *  `res.locations` raw, so a location whose geom came back as a string (or
+ *  under geom_json) showed no pin. */
+function tryParseJson(s: string): any {
+  try { return JSON.parse(s); } catch { return null; }
+}
+
+function resolveLocationGeom(raw: any): GeoPoint | null {
+  const candidate = raw?.geom_json ?? raw?.geom;
+  if (!candidate) return null;
+  const parsed = typeof candidate === 'string' ? tryParseJson(candidate) : candidate;
+  if (parsed?.type === 'Point' && Array.isArray(parsed?.coordinates) && parsed.coordinates.length === 2) {
+    const [lon, lat] = parsed.coordinates;
+    if (typeof lon === 'number' && typeof lat === 'number') {
+      return { type: 'Point', coordinates: [lon, lat] };
+    }
+  }
+  return null;
+}
+
+function normalizeLocation(raw: any): StockLocation {
+  return { ...raw, geom: resolveLocationGeom(raw) };
+}
 
 /**
  * Wraps the `/stock/locations/*` and `/stock/orgs/*` endpoints this app
@@ -56,12 +84,14 @@ export class StockAccessApiService {
     return data as T;
   }
 
-  locationsList(filters?: { org_id?: string | null }) {
-    return this.post<{ response: string; locations: StockLocation[] }>('/stock/locations/list', {
+  async locationsList(filters?: { org_id?: string | null; location_type?: LocationType | null; status?: LocationStatus | null }) {
+    const res = await this.post<{ response: string; locations: any[] }>('/stock/locations/list', {
       org_id: filters?.org_id ?? null,
-      location_type: null,
-      status: null,
+      location_type: filters?.location_type ?? null,
+      status: filters?.status ?? null,
     });
+    // Same normalisation CES_STOCK_MANAGER applies — coerce every row's geom.
+    return { ...res, locations: (res?.locations ?? []).map(normalizeLocation) } as { response: string; locations: StockLocation[] };
   }
 
   locationCreate(payload: LocationCreatePayload) {

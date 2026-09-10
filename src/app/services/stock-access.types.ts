@@ -1,15 +1,20 @@
 // Subset of STOCK_ROLES_API_HANDOVER.md's `/stock/*` types needed to manage
-// location access grants from this app (per user direction: CES_USER_ACCESS_CONTROL
+// location and org access from this app (per user direction: CES_USER_ACCESS_CONTROL
 // is the sole admin surface for access control — this screen was originally
 // mocked up as a tab inside the Stock console, but lives here instead).
-// Full stock domain types live in CES_STOCK_MANAGER's stock.types.ts.
+//
+// CES_STOCK_MANAGER's stock.types.ts is the source of truth. The stock/org
+// access types below (LocationType, LocationStatus, AccessScope, AccessRole,
+// GeoPoint, StockLocation, Location{Create,Update}Payload, LocationAccessGrant,
+// LocationAccessGrantPayload, OrgRow) are kept byte-identical to it — only the
+// UAC-only additions (OrgCreatePayload, StockUserRef) and the leading comments
+// differ. Full stock domain types (items, transfers, GRNs, …) stay there.
 
 export type LocationType = 'warehouse' | 'stockpile' | 'bootstock';
 export type LocationStatus = 'active' | 'frozen' | 'closed';
 export type AccessScope = 'location' | 'org' | 'client';
 export type AccessRole = 'auditor' | 'controller' | 'custodian' | 'receiver' | 'operator' | 'viewer';
 
-/** Matches CES_STOCK_MANAGER's GeoPoint — a location's pin. */
 export interface GeoPoint {
   type: 'Point';
   coordinates: [number, number];
@@ -23,10 +28,8 @@ export interface StockLocation {
   name: string;
   custodian_user_id: string | null;
   status: LocationStatus;
-  /** Present in CES_STOCK_MANAGER's own StockLocation and was missing here,
-   *  so this app could not see a location's coordinates at all. */
-  geom?: GeoPoint | null;
-  geom_source?: 'gps' | 'last_stock_location' | 'manual' | null;
+  geom_source: 'gps' | 'last_stock_location' | 'manual' | null;
+  geom: GeoPoint | null;
 }
 
 /** Mirrors CES_STOCK_MANAGER's LocationCreatePayload (stock.types.ts) — same
@@ -40,10 +43,21 @@ export interface LocationCreatePayload {
   location_type: LocationType;
   project_id?: string | null;
   custodian_user_id?: string | null;
-  /** Coordinates. CES_STOCK_MANAGER declares these on its own create payload
-   *  but only ever populates them from its EDIT screen — so a location
-   *  created here had no pin and no way to give it one without switching
-   *  apps, since this app deliberately does not wrap locationUpdate. */
+  geom?: GeoPoint | null;
+  geom_source?: 'gps' | 'last_stock_location' | 'manual' | null;
+}
+
+/** Byte-identical to CES_STOCK_MANAGER's LocationUpdatePayload. This app does
+ *  not currently wrap `/stock/locations/update` (edits stay in Stock Manager),
+ *  but the type is carried so the two never drift. */
+export interface LocationUpdatePayload {
+  location_id: string;
+  name?: string | null;
+  status?: LocationStatus | null;
+  /** Bootstock only — repoint a bootstock at a new custodian. */
+  custodian_user_id?: string | null;
+  /** Stockpile only — repoint a stockpile at a different project. */
+  project_id?: string | null;
   geom?: GeoPoint | null;
   geom_source?: 'gps' | 'last_stock_location' | 'manual' | null;
 }
