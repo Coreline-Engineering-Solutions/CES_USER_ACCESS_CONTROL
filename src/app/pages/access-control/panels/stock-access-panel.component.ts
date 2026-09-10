@@ -353,11 +353,28 @@ export class StockAccessPanelComponent implements OnInit {
    *  is populated by loadRealOrgs(), which submitCreateOrg() already
    *  re-runs after a successful create, so this updates immediately. */
   readonly orgs = computed(() => {
+    // SCOPED TO THE ACTIVE DATABASE. /stock/orgs/list and /stock/locations/list
+    // are both system-wide — they return every org and location this admin can
+    // reach across every client. Rendering that raw put OTHER CLIENTS'
+    // organisations in the picker (that is where the TEST-ORG-AUTO-* rows on
+    // web-demo were coming from), and one client's admin has no business
+    // seeing another's org names at all.
+    //
+    // org_id IS the client_db_gid in this schema, so the active db gid is
+    // exactly the filter. Same rule and same fallback as grantLocations()
+    // above: when the db has not resolved yet, show everything rather than an
+    // empty picker for the wrong reason — the session is still settling, not
+    // permission-denied.
+    const dbGid = this.activeDbGid();
+    const inScope = (id: string) => !dbGid || id === dbGid;
+
     const map = new Map<string, { org_id: string; count: number; types: Set<string> }>();
     for (const o of this.realOrgs()) {
+      if (!inScope(o.client_db_gid)) continue;
       map.set(o.client_db_gid, { org_id: o.client_db_gid, count: 0, types: new Set<string>() });
     }
     for (const l of this.locations()) {
+      if (!inScope(l.org_id)) continue;
       const e = map.get(l.org_id) ?? { org_id: l.org_id, count: 0, types: new Set<string>() };
       e.count += 1;
       e.types.add(l.location_type);
@@ -365,6 +382,7 @@ export class StockAccessPanelComponent implements OnInit {
     }
     return Array.from(map.values());
   });
+
 
   // ─── Organisation directory ──────────────────────────────────────────────
   // The real thing — /stock/orgs/create + /stock/orgs/list. This app is the
