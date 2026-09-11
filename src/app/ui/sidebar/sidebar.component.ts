@@ -19,7 +19,7 @@ interface NavItem {
 
 const ITEMS: NavItem[] = [
   { label: 'Dashboard', route: '/', icon: 'dashboard' },
-  { label: 'Access control', route: '/access', icon: 'access' },
+  { label: 'Users & access', route: '/access', icon: 'access' },
 ];
 
 @Component({

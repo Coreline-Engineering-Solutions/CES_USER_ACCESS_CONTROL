@@ -3,7 +3,7 @@
     @if (!layout.sidebarCollapsed()) {
       <div class="brand">
         <img src="/assets/CESLogoWhite.png" alt="CES" class="brand-logo" />
-        <span class="brand-name">Access Control</span>
+        <span class="brand-name">Client Portal</span>
       </div>
     }
 
@@ -27,7 +27,7 @@
 
   <nav class="sidebar-body">
     @if (!layout.sidebarCollapsed()) {
-      <h2 class="nav-group-label">Navigation</h2>
+      <h2 class="nav-group-label">Your company</h2>
     }
 
     @for (item of items; track item.route) {
@@ -62,4 +62,17 @@
       </a>
     }
   </nav>
+
+  <!-- Platform-wide administration is the other portal. Shown to everyone:
+       a client admin who lands here looking for "create a user on another
+       database" needs to be told where that lives, not left to guess. -->
+  @if (!layout.sidebarCollapsed()) {
+    <div class="sidebar-foot">
+      <div class="sidebar-foot__label">Looking for</div>
+      <a class="sidebar-foot__link" href="https://access.corelineengineering.com" target="_blank" rel="noopener">
+        Admin Portal ↗
+        <small>All clients, databases, tool tiles, licences — CES staff</small>
+      </a>
+    </div>
+  }
 </aside>

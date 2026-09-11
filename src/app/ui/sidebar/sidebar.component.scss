@@ -164,3 +164,20 @@
   .sidebar .nav-label { display: none; }
   .sidebar .nav-item { justify-content: center; padding: 8px; }
 }
+
+/* Cross-link to the other portal — answers "which app do I use" in place. */
+.sidebar-foot {
+  margin-top: auto;
+  padding: 12px 10px 14px;
+  border-top: 1px solid var(--gc-border);
+  &__label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--gc-text-muted); margin-bottom: 6px;
+  }
+  &__link {
+    display: block; color: var(--gc-text); text-decoration: none; font-size: 13px; font-weight: 600;
+    padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,.04);
+    &:hover { background: rgba(255,255,255,.08); }
+    small { display: block; font-weight: 400; font-size: 11px; color: var(--gc-text-muted); margin-top: 2px; line-height: 1.35; }
+  }
+}
