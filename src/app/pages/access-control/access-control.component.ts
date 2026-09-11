@@ -1,7 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { NgComponentOutlet, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RolesApiService } from '../../services/roles-api.service';
 import { SessionService } from '../../session/session.service';
 import { DbUsersService } from '../../services/db-users.service';
 import { AdminUsersService, NewUserDraft } from '../../services/admin-users.service';
@@ -27,7 +26,6 @@ type Tab = 'users' | 'projects' | 'roles';
   templateUrl: './access-control.component.html',
 })
 export class AccessControlComponent implements OnInit {
-  private readonly rolesApi = inject(RolesApiService);
   readonly userUtils = inject(UserUtilitiesService);
   readonly session = inject(SessionService);
   readonly dbUsers = inject(DbUsersService); // template reads dbUsers.users() for email dropdowns
@@ -181,7 +179,7 @@ export class AccessControlComponent implements OnInit {
     const failed: string[] = [];
     for (const name of missing) {
       try {
-        await this.rolesApi.roleCreate({ role_name: name, utility_name: 'GIS System' });
+        await this.clientRoles.createRole(name, 'GIS System');
         created.push(name);
       } catch (err: any) {
         console.error('[AccessControl] seed role failed:', name, err);
@@ -397,9 +395,14 @@ export class AccessControlComponent implements OnInit {
       const roleGid = this.newUserRoleGid();
       if (roleGid) {
         try {
-          await this.rolesApi.userRoleAssign({ user_email: email, role_gid: roleGid });
-          const roleName = this.roles().find((r) => r.role_gid === roleGid)?.role_name ?? 'role';
-          step(`Assigned ${roleName}.`);
+          const target = this.roles().find((r) => r.role_gid === roleGid);
+          const { utility, role } = target
+            ? { utility: target.utility_name, role: target.role_name }
+            : ClientRolesService.parseRoleKey(roleGid);
+          if (!(await this.clientRoles.assignUserRole(email, role, utility))) {
+            throw new Error('The auth API did not confirm the role assignment.');
+          }
+          step(`Assigned ${role}.`);
         } catch (err: any) {
           this.createUserError.set(
             `User created and linked, but the role could not be assigned: ${err?.response?.data?.detail ?? err?.message ?? 'unknown error'}`,
@@ -569,17 +572,19 @@ export class AccessControlComponent implements OnInit {
   }
 
   readonly userRows = computed(() => {
-    const rolesByGid = new Map<string, UserRoleAssignment[]>();
+    // Assignments from the auth API are keyed by EMAIL (user_gid carries
+    // it) - which is also the one field every user source here agrees on.
+    const rolesByEmail = new Map<string, UserRoleAssignment[]>();
     for (const a of this.assignments()) {
-      const key = String(a.user_gid ?? '').toLowerCase();
-      const list = rolesByGid.get(key) ?? [];
+      const key = String(a.user_email ?? a.user_gid ?? '').toLowerCase();
+      const list = rolesByEmail.get(key) ?? [];
       list.push(a);
-      rolesByGid.set(key, list);
+      rolesByEmail.set(key, list);
     }
     return this.dbUsers.users().map((u) => ({
       email: u.email,
       user_gid: u.user_gid,
-      roles: rolesByGid.get(String(u.user_gid ?? '').toLowerCase()) ?? [],
+      roles: rolesByEmail.get(String(u.email ?? '').toLowerCase()) ?? [],
     }));
   });
 
@@ -588,8 +593,8 @@ export class AccessControlComponent implements OnInit {
    *  no longer on the database is exactly what an access review needs to
    *  see. */
   readonly orphanAssignments = computed<UserRoleAssignment[]>(() => {
-    const known = new Set(this.dbUsers.users().map((u) => String(u.user_gid ?? '').toLowerCase()));
-    return this.assignments().filter((a) => !known.has(String(a.user_gid ?? '').toLowerCase()));
+    const known = new Set(this.dbUsers.users().map((u) => String(u.email ?? '').toLowerCase()));
+    return this.assignments().filter((a) => !known.has(String(a.user_email ?? a.user_gid ?? '').toLowerCase()));
   });
 
   /** Revoke straight from a user row - the email is already known here, so
@@ -600,7 +605,10 @@ export class AccessControlComponent implements OnInit {
   async revokeRoleFromUser(email: string, a: UserRoleAssignment): Promise<void> {
     this.rowRevoking.set(email + '::' + a.role_gid);
     try {
-      await this.rolesApi.userRoleRevoke({ user_email: email, role_gid: a.role_gid });
+      const utility = a.utility_name || ClientRolesService.parseRoleKey(a.role_gid).utility;
+      if (!(await this.clientRoles.removeUserRole(email, a.role_name, utility))) {
+        throw new Error('The auth API did not confirm the revoke.');
+      }
       await this.load();
     } catch (err: any) {
       console.error('[AccessControl] revoke role failed:', err);
@@ -658,18 +666,24 @@ export class AccessControlComponent implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     try {
-      const [rolesRes, privNames, assignRes] = await Promise.all([
-        this.rolesApi.rolesList(),
+      // Roles and assignments come from the AUTH API - the system every
+      // endpoint actually enforces. The client-local /roles/* list this used
+      // to read showed roles that gated nothing (see ClientRolesService).
+      // Roles are per utility; ask for each utility this user holds, plus
+      // GIS System always, since that is where every privilege lives.
+      const utilities = Array.from(new Set(['GIS System', ...this.userUtils.available()]));
+      const [roles, privNames] = await Promise.all([
+        this.clientRoles.listRoles(utilities),
         this.clientRoles.availablePrivileges('GIS System').catch((err) => {
           console.error('[AccessControl] privilege catalogue failed:', err);
           this.privilegesError.set('Could not load the privilege list from the auth API.');
           return [] as string[];
         }),
-        this.rolesApi.userRolesList(),
       ]);
-      this.roles.set(rolesRes?.roles ?? []);
+      const assignments = await this.clientRoles.listAssignments(roles);
+      this.roles.set(roles);
       this.privileges.set(privNames);
-      this.assignments.set(assignRes?.assignments ?? []);
+      this.assignments.set(assignments);
     } catch (err: any) {
       console.error('[AccessControl] load failed:', err);
       this.error.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to load access control data');
@@ -689,7 +703,7 @@ export class AccessControlComponent implements OnInit {
     this.creatingRole.set(true);
     this.roleError.set(null);
     try {
-      await this.rolesApi.roleCreate({ role_name: name, utility_name: this.newRoleUtility().trim() || 'GIS System' });
+      await this.clientRoles.createRole(name, this.newRoleUtility().trim() || 'GIS System');
       this.newRoleName.set('');
       await this.load();
     } catch (err: any) {
@@ -700,14 +714,18 @@ export class AccessControlComponent implements OnInit {
     }
   }
 
+  /**
+   * Deleting a role has no Auth-API function yet. The old path deleted the
+   * client-local row, which removed it from this list while the enforced
+   * role (and everyone holding it) stayed exactly as it was - a delete that
+   * looked done and was not. Better to say so than pretend. Revoke the
+   * role's privileges and users instead; ask backend for `/role/delete`.
+   */
   async deleteRole(role: ClientRole): Promise<void> {
-    try {
-      await this.rolesApi.roleDelete(role.role_gid);
-      this.roles.update((list) => list.filter((r) => r.role_gid !== role.role_gid));
-    } catch (err: any) {
-      console.error('[AccessControl] role delete failed:', err);
-      this.error.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to delete role');
-    }
+    this.error.set(
+      `Removing "${role.role_name}" is not supported by the auth API yet. Clear its privileges and revoke it from users instead - ` +
+      `that is what actually changes access. (Backend: a /role/delete route is needed.)`,
+    );
   }
 
 
@@ -723,7 +741,13 @@ export class AccessControlComponent implements OnInit {
     this.assigning.set(true);
     this.assignError.set(null);
     try {
-      await this.rolesApi.userRoleAssign({ user_email: email, role_gid: this.assignRoleGid() });
+      const target = this.roles().find((r) => r.role_gid === this.assignRoleGid());
+      const { utility, role } = target
+        ? { utility: target.utility_name, role: target.role_name }
+        : ClientRolesService.parseRoleKey(this.assignRoleGid());
+      if (!(await this.clientRoles.assignUserRole(email, role, utility))) {
+        throw new Error('The auth API did not confirm the role assignment.');
+      }
       this.assignEmail.set('');
       await this.load();
     } catch (err: any) {
@@ -755,7 +779,10 @@ export class AccessControlComponent implements OnInit {
     this.revokingAssignment.set(true);
     this.revokeAssignmentError.set(null);
     try {
-      await this.rolesApi.userRoleRevoke({ user_email: email, role_gid: a.role_gid });
+      const utility = a.utility_name || ClientRolesService.parseRoleKey(a.role_gid).utility;
+      if (!(await this.clientRoles.removeUserRole(email, a.role_name, utility))) {
+        throw new Error('The auth API did not confirm the revoke.');
+      }
       this.revokeAssignmentTarget.set(null);
       await this.load();
     } catch (err: any) {
@@ -772,8 +799,11 @@ export class AccessControlComponent implements OnInit {
     this.checking.set(true);
     this.checkResult.set(null);
     try {
-      const res = await this.rolesApi.checkPermission(priv);
-      this.checkResult.set(res?.has_permission ? 'Granted' : 'Not granted');
+      // _check_function_permission on the auth API - the exact call every
+      // protected endpoint makes. The client-local /roles/check-permission
+      // this used to hit answers from tables nothing enforces.
+      const granted = await this.clientRoles.checkFunctionPermission(priv, 'GIS System');
+      this.checkResult.set(granted ? 'Granted' : 'Not granted');
     } catch (err: any) {
       console.error('[AccessControl] permission check failed:', err);
       this.checkResult.set('Check failed');

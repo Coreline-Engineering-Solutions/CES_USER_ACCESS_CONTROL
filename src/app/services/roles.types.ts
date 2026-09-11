@@ -42,9 +42,13 @@ export interface RolePrivilegeMappingPayload {
 }
 
 export interface UserRoleAssignment {
+  /** From the auth API this is the EMAIL (it has no user gid on this
+   *  surface). Kept under this name so existing joins/templates hold. */
   user_gid: string;
+  user_email?: string;
   role_gid: string;
   role_name: string;
+  utility_name?: string;
   assigned_by: string;
   assigned_date: string;
 }

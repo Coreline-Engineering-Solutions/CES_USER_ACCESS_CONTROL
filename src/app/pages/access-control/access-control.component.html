@@ -257,14 +257,13 @@
           </div>
           <div class="tablewrap" style="margin-top:10px">
             <table>
-              <thead><tr><th>User GID</th><th>Role</th><th>Assigned by</th><th>Assigned</th>@if (canManageRoles()) { <th class="actions">Action</th> }</tr></thead>
+              <thead><tr><th>User</th><th>Role</th><th>Utility</th>@if (canManageRoles()) { <th class="actions">Action</th> }</tr></thead>
               <tbody>
                 @for (a of orphanAssignments(); track a.user_gid + a.role_gid) {
                   <tr>
-                    <td class="num">{{ a.user_gid.slice(0, 8) }}…</td>
+                    <td>{{ a.user_email || a.user_gid }}</td>
                     <td>{{ a.role_name }}</td>
-                    <td class="num">{{ a.assigned_by }}</td>
-                    <td class="num">{{ a.assigned_date | slice:0:10 }}</td>
+                    <td class="num">{{ a.utility_name || 'GIS System' }}</td>
                     @if (canManageRoles()) { <td class="actions"><button class="btn" (click)="openRevokeAssignment(a)">Revoke</button></td> }
                   </tr>
                 }

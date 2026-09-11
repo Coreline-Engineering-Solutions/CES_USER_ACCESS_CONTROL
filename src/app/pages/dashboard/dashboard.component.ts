@@ -1,7 +1,8 @@
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { StockAccessApiService } from '../../services/stock-access-api.service';
-import { RolesApiService } from '../../services/roles-api.service';
+import { ClientRolesService } from '../../services/client-roles.service';
+import { UserUtilitiesService } from '../../services/user-utilities.service';
 import { SessionService } from '../../session/session.service';
 import { AccessRole, LocationAccessGrant, StockLocation } from '../../services/stock-access.types';
 import { ClientPrivilege, ClientRole, UserRoleAssignment } from '../../services/roles.types';
@@ -24,7 +25,8 @@ const ALL_ROLES: AccessRole[] = ['viewer', 'operator', 'receiver', 'custodian', 
 })
 export class DashboardComponent implements OnInit {
   private readonly stockAccess = inject(StockAccessApiService);
-  private readonly rolesApi = inject(RolesApiService);
+  private readonly clientRoles = inject(ClientRolesService);
+  private readonly userUtils = inject(UserUtilitiesService);
   readonly session = inject(SessionService);
 
   readonly loading = signal(true);
@@ -81,18 +83,23 @@ export class DashboardComponent implements OnInit {
     this.error.set(null);
     try {
       // Independent calls — one slow endpoint shouldn't serialise the rest.
-      const [locRes, grantRes, roleRes, privRes, assignRes] = await Promise.all([
+      // Roles / privileges / assignments are counted from the AUTH API -
+      // the system endpoints enforce - not the client-local /roles/* tables.
+      const utilities = Array.from(new Set(['GIS System', ...this.userUtils.available()]));
+      const [locRes, grantRes, roleList, privNames] = await Promise.all([
         this.stockAccess.locationsList(),
         this.stockAccess.locationAccessList(),
-        this.rolesApi.rolesList(),
-        this.rolesApi.privilegesList(),
-        this.rolesApi.userRolesList(null),
+        this.clientRoles.listRoles(utilities),
+        this.clientRoles.availablePrivileges('GIS System').catch(() => [] as string[]),
       ]);
+      const assignments = await this.clientRoles.listAssignments(roleList);
       this.locations.set(locRes?.locations ?? []);
       this.grants.set(grantRes?.access ?? []);
-      this.roles.set(roleRes?.roles ?? []);
-      this.privileges.set(privRes?.privileges ?? []);
-      this.assignments.set(assignRes?.assignments ?? []);
+      this.roles.set(roleList);
+      this.privileges.set(privNames.map((privilege_name) => ({
+        pk: 0, privilege_name, privilege_gid: privilege_name, utility_name: 'GIS System',
+      })));
+      this.assignments.set(assignments);
     } catch (err: any) {
       console.error('[Dashboard] load failed:', err);
       this.error.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to load access overview');

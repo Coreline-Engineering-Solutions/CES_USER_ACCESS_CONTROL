@@ -4,7 +4,8 @@ import { DbUsersService } from '../../../services/db-users.service';
 import { StockAccessApiService } from '../../../services/stock-access-api.service';
 import { GisAccessApiService } from '../../../services/gis-access-api.service';
 import { ModulesAccessApiService } from '../../../services/modules-access-api.service';
-import { RolesApiService } from '../../../services/roles-api.service';
+import { ClientRolesService } from '../../../services/client-roles.service';
+import { UserUtilitiesService } from '../../../services/user-utilities.service';
 import { SessionService } from '../../../session/session.service';
 import { OrgRow, StockLocation } from '../../../services/stock-access.types';
 import { ModuleAccessEntry, ModuleSummary } from '../../../services/modules-access.types';
@@ -69,7 +70,8 @@ export class UserDirectoryPanelComponent implements OnInit {
   private readonly stockAccess = inject(StockAccessApiService);
   private readonly gisAccess = inject(GisAccessApiService);
   private readonly modulesAccess = inject(ModulesAccessApiService);
-  private readonly rolesApi = inject(RolesApiService);
+  private readonly clientRoles = inject(ClientRolesService);
+  private readonly userUtils = inject(UserUtilitiesService);
   readonly session = inject(SessionService);
 
   readonly loading = signal(true);
@@ -173,13 +175,18 @@ export class UserDirectoryPanelComponent implements OnInit {
       const users = this.dbUsers.users();
       const usersByGid = new Map(users.map((u) => [u.user_gid, u]));
 
-      const [locRes, grantRes, orgRes, modulesRes, rolesRes] = await Promise.all([
+      // Roles from the AUTH API (the enforced ones), keyed by email - see
+      // ClientRolesService. The client-local list this read before showed
+      // roles that gated nothing.
+      const utilities = Array.from(new Set(['GIS System', ...this.userUtils.available()]));
+      const [locRes, grantRes, orgRes, modulesRes, roleList] = await Promise.all([
         this.stockAccess.locationsList(),
         this.stockAccess.locationAccessList(),
         this.stockAccess.orgsList(),
         this.modulesAccess.moduleList(),
-        this.rolesApi.userRolesList(),
+        this.clientRoles.listRoles(utilities),
       ]);
+      const roleAssignments = await this.clientRoles.listAssignments(roleList);
       this.locations.set(locRes?.locations ?? []);
       this.orgs.set(orgRes?.orgs ?? []);
       const modules = this.unwrap<ModuleSummary>(modulesRes, 'modules');
@@ -236,15 +243,16 @@ export class UserDirectoryPanelComponent implements OnInit {
         }
       }
 
-      // Client roles — gid-keyed, no email on the row; cross-referenced against db-linked users.
-      for (const a of rolesRes?.assignments ?? []) {
-        const u = usersByGid.get(a.user_gid);
+      // Roles — email-keyed from the auth API; matched to db-linked users by email.
+      const usersByEmail = new Map(users.map((u) => [String(u.email ?? '').toLowerCase(), u]));
+      for (const a of roleAssignments) {
+        const u = usersByEmail.get(String(a.user_email ?? a.user_gid ?? '').toLowerCase());
         if (!u) continue;
         ensure(u.email, u.user_gid).grants.push({
           system: 'roles',
           key: 'role:' + a.role_gid + ':' + u.email,
           scope: 'client',
-          targetLabel: 'Whole client',
+          targetLabel: a.utility_name || 'GIS System',
           role: a.role_name,
           refId: a.role_gid,
         });
@@ -299,9 +307,13 @@ export class UserDirectoryPanelComponent implements OnInit {
         case 'modules':
           await this.modulesAccess.accessRevoke(grant.refId, email);
           break;
-        case 'roles':
-          await this.rolesApi.userRoleRevoke({ user_email: email, role_gid: grant.refId });
+        case 'roles': {
+          const { utility, role } = ClientRolesService.parseRoleKey(grant.refId);
+          if (!(await this.clientRoles.removeUserRole(email, role, utility))) {
+            throw new Error('The auth API did not confirm the revoke.');
+          }
           break;
+        }
       }
       this.removeGrant(email, grant.key);
     } catch (err: any) {
