@@ -189,7 +189,18 @@ export class UserDirectoryPanelComponent implements OnInit {
       const roleAssignments = await this.clientRoles.listAssignments(roleList);
       this.locations.set(locRes?.locations ?? []);
       this.orgs.set(orgRes?.orgs ?? []);
-      const modules = this.unwrap<ModuleSummary>(modulesRes, 'modules');
+      // /modules/list returns rows keyed by `global_id` (and `data`, not
+      // `modules`) - the modules panel normalises this; this panel did not,
+      // so every accessList(m.module_gid) below went out with module_gid
+      // undefined, 422'd, was swallowed by the catch, and the directory
+      // showed no Modules grants for anyone. Verified live 11 Sep.
+      const modules: ModuleSummary[] = this.unwrap<any>(modulesRes, 'modules')
+        .map((r: any) => ({
+          ...r,
+          module_gid: String(r?.module_gid ?? r?.global_id ?? r?.gid ?? '').trim(),
+          description: String(r?.description ?? r?.name ?? '').trim(),
+        }))
+        .filter((m: ModuleSummary) => !!m.module_gid);
       this.modules.set(modules);
 
       const groups = new Map<string, UserGrantGroup>();
