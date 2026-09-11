@@ -95,11 +95,20 @@ export class ClientRolesService {
     }
   }
 
-  /** The whole privilege catalogue for a utility - the list to pick from. */
+  /**
+   * The whole privilege catalogue for a utility - the list to pick from.
+   * Deduplicated by name: verified live 11 Sep, the auth API returns 144
+   * rows for 136 names under GIS System (the Stock set and
+   * _manage_client_roles appear twice). Every function here keys by NAME,
+   * so a repeat is the same privilege said twice - but linking it twice
+   * and counting it twice would be wrong. Backend has been asked to dedupe
+   * the source.
+   */
   async availablePrivileges(utility = 'GIS System'): Promise<string[]> {
     const data = await this.call({ function: '_available_privileges', utility });
     const list = this.ok(data) ? (data?.privilege_list ?? []) : [];
-    return (Array.isArray(list) ? list : []).map((p) => this.name(p)).filter(Boolean);
+    const names = (Array.isArray(list) ? list : []).map((p) => this.name(p)).filter(Boolean);
+    return Array.from(new Set(names));
   }
 
   /** Privileges currently ON a role, for this database. This is the call
@@ -114,13 +123,37 @@ export class ClientRolesService {
     return (Array.isArray(list) ? list : []).map((p) => this.name(p)).filter(Boolean);
   }
 
-  /** Roles defined for a utility (name list). */
+  /**
+   * Roles defined for a utility ON THE ACTIVE DATABASE.
+   *
+   * `_available_roles` is not scoped to the session's database - verified
+   * live 11 Sep, it returns every database's roles as `{role_name,
+   * db_name}` (15 rows for five databases each holding the standard
+   * three). Filtered here by the active db's name, compared loosely, since
+   * the auth API spells names like "web-demo" and other sources say
+   * "web_demo". If the active name cannot be resolved the list is returned
+   * unfiltered and a warning logged, rather than silently empty.
+   */
   async availableRoles(utility = 'GIS System'): Promise<string[]> {
     const data = await this.call({ function: '_available_roles', utility });
     const list = this.ok(data) ? (data?.role_list ?? []) : [];
-    return (Array.isArray(list) ? list : [])
-      .map((r: any) => String(r?.role_name ?? r?.name ?? r?.role ?? r ?? '').trim())
-      .filter(Boolean);
+    const rows = (Array.isArray(list) ? list : []).map((r: any) => ({
+      role: String(r?.role_name ?? r?.name ?? r?.role ?? r ?? '').trim(),
+      db: String(r?.db_name ?? r?.database ?? '').trim(),
+    })).filter((r) => r.role);
+
+    const mine = this.dbKey(await this.activeDbName());
+    if (!mine) {
+      console.warn('[ClientRoles] active db name unresolved - role list is unfiltered across databases');
+      return Array.from(new Set(rows.map((r) => r.role)));
+    }
+    // Rows without a db_name are treated as global (utility-wide) roles.
+    return Array.from(new Set(rows.filter((r) => !r.db || this.dbKey(r.db) === mine).map((r) => r.role)));
+  }
+
+  /** "web-demo", "web_demo", "Web Demo" -> "webdemo". */
+  private dbKey(name: string): string {
+    return String(name ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
   }
 
   async assignPrivilege(role: string, privilege: string, utility = 'GIS System'): Promise<boolean> {
@@ -220,6 +253,21 @@ export class ClientRolesService {
       .filter(Boolean);
   }
 
+  /** Same as roleUsers, keeping the user_gid the auth API sends alongside. */
+  async roleUserRows(role: string, utility = 'GIS System'): Promise<Array<{ email: string; user_gid: string }>> {
+    const db_name = await this.activeDbName();
+    const payload: Record<string, any> = { function: '_check_role_users', utility, role };
+    if (db_name) payload['db_name'] = db_name;
+    const data = await this.call(payload);
+    const list = this.ok(data) ? (data?.emails ?? data?.email_list ?? data?.users ?? []) : [];
+    return (Array.isArray(list) ? list : [])
+      .map((e: any) => ({
+        email: String(e?.email ?? e?.user_email ?? e ?? '').trim().toLowerCase(),
+        user_gid: String(e?.user_gid ?? e?.gid ?? '').trim(),
+      }))
+      .filter((r) => r.email);
+  }
+
   /**
    * Every (user, role) pair on the active database, built from one
    * `_check_role_users` per role. `user_gid` carries the EMAIL - the auth
@@ -230,9 +278,9 @@ export class ClientRolesService {
     const perRole = await Promise.all(
       roles.map(async (r) => {
         try {
-          const emails = await this.roleUsers(r.role_name, r.utility_name);
-          return emails.map((email) => ({
-            user_gid: email,
+          const users = await this.roleUserRows(r.role_name, r.utility_name);
+          return users.map(({ email, user_gid }) => ({
+            user_gid: user_gid || email,
             user_email: email,
             role_gid: r.role_gid,
             role_name: r.role_name,
