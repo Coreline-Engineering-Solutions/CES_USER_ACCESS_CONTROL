@@ -55,7 +55,7 @@
     @if (activeTab() === 'roles') {
       <div class="hiernote">
         <span class="i">i</span>
-        <span>Client-local roles/privileges live in this client's own database — separate from the Auth API's global roles. Assign privileges to a role here, then assign the role to users in the next tab.</span>
+        <span>Roles and their privileges live on the auth API, scoped to this database — the same roles every CES tool checks on each request. Link privileges to a role here, then assign the role to users in the next tab. Changes are enforced immediately; users see them after their next sign-in.</span>
       </div>
 
       <!-- Roles list. Single full-width column - the privileges table that
@@ -77,6 +77,15 @@
           }
           @if (seedResult()) { <div class="hiernote ok" style="margin-bottom:10px"><span class="i">✓</span><span>{{ seedResult() }}</span></div> }
           @if (privilegesError()) { <div class="hiernote warn" style="margin-bottom:10px"><span class="i">!</span><span>{{ privilegesError() }}</span></div> }
+        }
+        @if (canSeedStandardRoles()) {
+          <div class="seed-bar">
+            <div>
+              <strong>Standard roles</strong>
+              <span class="muted">Viewer · Planner · Manager, from the seed spec. Preview first, nothing is written until you confirm.</span>
+            </div>
+            <button class="btn primary" [disabled]="loading()" (click)="openSeedStandardRoles()">Set up standard roles…</button>
+          </div>
         }
 
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
@@ -287,6 +296,150 @@
   }
   }
 </div>
+
+<!-- Set up standard roles: preview -> typed confirm -> apply with progress -->
+@if (seedOpen()) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="Set up standard roles">
+    <div class="modal" style="width:680px">
+      <div class="m-h">
+        <h3>
+          Set up standard roles
+          <span class="muted" style="font-weight:400;font-size:12px;margin-left:8px">
+            @switch (seedStep()) {
+              @case ('preview') { 1 · Preview }
+              @case ('confirm') { 2 · Confirm }
+              @case ('apply') { 3 · Applying }
+              @case ('done') { Done }
+            }
+          </span>
+        </h3>
+        <button class="x" (click)="closeSeed()" [disabled]="seedApplying()" aria-label="Close">✕</button>
+      </div>
+
+      <div class="m-sec">
+        @if (seedError()) { <div class="hiernote warn"><span class="i">!</span><span>{{ seedError() }}</span></div> }
+
+        @switch (seedStep()) {
+
+          @case ('preview') {
+            @if (seedLoading()) {
+              <p class="muted" style="font-size:12px">Reading the privilege catalogue and each role's current privileges…</p>
+            } @else if (seedPreview().length > 0) {
+              <p class="muted" style="font-size:12px;margin-bottom:10px">
+                Against <strong>{{ seedDbName() || 'this database' }}</strong>. Additive only — nothing is ever removed from a role.
+              </p>
+              <div class="tablewrap">
+                <table class="seed-table">
+                  <thead>
+                    <tr><th>Role</th><th>State</th><th class="num">Will link</th><th class="num">Already</th><th class="num">Can't link</th><th class="num">Extra</th></tr>
+                  </thead>
+                  <tbody>
+                    @for (b of seedPreview(); track b.role) {
+                      <tr [class.is-skipped]="!seedRowActive(b)">
+                        <td><strong>{{ b.role }}</strong><div class="muted" style="font-size:11px">{{ b.summary }}</div></td>
+                        <td>
+                          @switch (b.state) {
+                            @case ('create') { <span class="pill create">will create</span> }
+                            @case ('empty') { <span class="pill empty">exists, empty</span> }
+                            @case ('configured') {
+                              <label class="pill-check" title="This role already has privileges. Tick to ADD the missing ones — existing ones are never removed.">
+                                <input type="checkbox" [checked]="b.include" (change)="toggleSeedInclude(b.role)" />
+                                {{ b.include ? 'add missing' : 'configured — skipped' }}
+                              </label>
+                            }
+                          }
+                        </td>
+                        <td class="num">{{ seedRowActive(b) ? b.toLink.length : '—' }}</td>
+                        <td class="num">{{ b.alreadyLinked }}</td>
+                        <td class="num" [class.warn]="b.cannotLink.length > 0" [title]="b.cannotLink.join(', ')">{{ b.cannotLink.length }}</td>
+                        <td class="num" [title]="'Privileges on the role that are not in the bundle. Left alone.'">{{ b.extra }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              <p class="muted" style="font-size:11px;margin-top:8px">
+                <strong>Can't link</strong> = the bundle names a privilege this database's catalogue does not have — a backend seeding gap, not something this button can fix.
+                <strong>Extra</strong> = privileges already on the role that the bundle does not include; they stay.
+              </p>
+            }
+          }
+
+          @case ('confirm') {
+            <div class="hiernote warn" style="margin-bottom:12px">
+              <span class="i">!</span>
+              <span>
+                This writes <strong>{{ seedTotalToLink() }}</strong> privilege link{{ seedTotalToLink() === 1 ? '' : 's' }}
+                @if (seedRolesToCreate().length > 0) { and creates <strong>{{ seedRolesToCreate().join(', ') }}</strong> }
+                against <strong>{{ seedDbName() || 'this database' }}</strong>'s live access control. Every user holding these roles is affected on their next request.
+              </span>
+            </div>
+            <div class="field">
+              <label>Type <strong>{{ seedConfirmWord() }}</strong> to confirm</label>
+              <input class="inp" [ngModel]="seedConfirmText()" (ngModelChange)="seedConfirmText.set($event)" [placeholder]="seedConfirmWord()" autocomplete="off" />
+            </div>
+          }
+
+          @case ('apply') {
+            <p class="muted" style="font-size:12px;margin-bottom:10px">Linking, a few at a time. Leave this open until it finishes.</p>
+            @for (r of seedApply(); track r.role) {
+              <div class="seed-progress" [attr.data-state]="r.state">
+                <div class="seed-progress__head">
+                  <strong>{{ r.role }}</strong>
+                  <span class="muted">{{ r.done }} / {{ r.total }}@if (r.failed.length > 0) { · {{ r.failed.length }} failed }</span>
+                </div>
+                <div class="seed-progress__bar"><div class="seed-progress__fill" [style.width.%]="r.total ? (r.done / r.total) * 100 : 100"></div></div>
+              </div>
+            }
+          }
+
+          @case ('done') {
+            @for (r of seedApply(); track r.role) {
+              <div class="hiernote" [class.ok]="r.state === 'ok'" [class.warn]="r.state !== 'ok'" style="margin-bottom:8px">
+                <span class="i">{{ r.state === 'ok' ? '✓' : '!' }}</span>
+                <span>
+                  <strong>{{ r.role }}</strong> —
+                  @switch (r.state) {
+                    @case ('ok') { {{ r.total }} linked. }
+                    @case ('partial') { {{ r.done - r.failed.length }} of {{ r.total }} linked; {{ r.failed.length }} failed. Re-run to retry only those. }
+                    @case ('failed') { {{ r.failed.length === 1 && r.failed[0].startsWith('create role') ? r.failed[0] : 'nothing linked — ' + r.failed.length + ' failed.' }} }
+                  }
+                  @if (r.failed.length > 0 && r.failed.length <= 8) {
+                    <div class="muted" style="font-size:11px;margin-top:4px">{{ r.failed.join(', ') }}</div>
+                  }
+                </span>
+              </div>
+            }
+            <p class="muted" style="font-size:11px;margin-top:6px">Users holding these roles are enforced on their next request; the CES apps refresh their own view after the next sign-in.</p>
+          }
+        }
+      </div>
+
+      <div class="m-f">
+        @switch (seedStep()) {
+          @case ('preview') {
+            <button class="btn" (click)="closeSeed()">Cancel</button>
+            <button class="btn primary" style="margin-left:auto"
+              [disabled]="seedLoading() || (seedTotalToLink() === 0 && seedRolesToCreate().length === 0)"
+              (click)="goSeedConfirm()">
+              @if (seedTotalToLink() === 0 && seedRolesToCreate().length === 0 && !seedLoading()) { Nothing to do } @else { Continue — {{ seedTotalToLink() }} to link }
+            </button>
+          }
+          @case ('confirm') {
+            <button class="btn" (click)="seedStep.set('preview')">Back</button>
+            <button class="btn primary" style="margin-left:auto" [disabled]="!seedConfirmMatches()" (click)="applySeedStandardRoles()">Apply</button>
+          }
+          @case ('apply') {
+            <span class="muted" style="font-size:12px">Working…</span>
+          }
+          @case ('done') {
+            <button class="btn primary" style="margin-left:auto" (click)="closeSeed()">Close</button>
+          }
+        }
+      </div>
+    </div>
+  </div>
+}
 
 <!-- Revoke user-role assignment (needs email — list only carries user_gid) -->
 @if (revokeAssignmentTarget(); as a) {

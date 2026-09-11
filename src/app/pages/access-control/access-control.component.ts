@@ -1,10 +1,16 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { NgComponentOutlet, SlicePipe } from '@angular/common';
+import { NgComponentOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SessionService } from '../../session/session.service';
 import { DbUsersService } from '../../services/db-users.service';
 import { AdminUsersService, NewUserDraft } from '../../services/admin-users.service';
 import { ClientRolesService } from '../../services/client-roles.service';
+import {
+  NEVER_SEED,
+  STANDARD_ROLE_BUNDLES,
+  STANDARD_ROLE_UTILITY,
+  type StandardRoleName,
+} from './standard-role-bundles';
 import { ClientRole, UserRoleAssignment } from '../../services/roles.types';
 import { AccessProject, PROJECT_REGISTRY } from './project-registry';
 import { UserUtilitiesService, utilityKey } from '../../services/user-utilities.service';
@@ -19,10 +25,39 @@ import { UserUtilitiesService, utilityKey } from '../../services/user-utilities.
  */
 type Tab = 'users' | 'projects' | 'roles';
 
+/** One row of the standard-roles preview — everything the operator sees
+ *  before anything is written. */
+type BundlePreview = {
+  role: StandardRoleName;
+  summary: string;
+  /** 'create' = role missing; 'empty' = exists with no privileges;
+   *  'configured' = exists and already has privileges (skipped unless opted in). */
+  state: 'create' | 'empty' | 'configured';
+  /** Explicitly opted in to ADD missing privileges to a configured role. */
+  include: boolean;
+  /** Privileges the bundle names that the catalogue does not have. */
+  cannotLink: string[];
+  /** Already on the role — nothing to do. */
+  alreadyLinked: number;
+  /** What Apply will actually write. */
+  toLink: string[];
+  /** Privileges on the role that are NOT in the bundle — shown so the
+   *  operator knows what "configured" means; never removed. */
+  extra: number;
+};
+
+type BundleApplyRow = {
+  role: StandardRoleName;
+  done: number;
+  total: number;
+  failed: string[];
+  state: 'pending' | 'running' | 'ok' | 'partial' | 'failed';
+};
+
 @Component({
   selector: 'app-access-control',
   standalone: true,
-  imports: [FormsModule, SlicePipe, NgComponentOutlet],
+  imports: [FormsModule, NgComponentOutlet],
   templateUrl: './access-control.component.html',
 })
 export class AccessControlComponent implements OnInit {
@@ -156,20 +191,202 @@ export class AccessControlComponent implements OnInit {
   // roles, it does not mint new privilege names. See RolesApiService.
 
   // --- Standard roles per database ---------------------------------------
-  // Every client db is supposed to carry the same three GIS roles. Rather
-  // than each admin hand-typing them (and drifting on spelling, which then
-  // silently fails every downstream role-name match), this seeds whichever
-  // of the three are missing. Existing roles are left alone - additive,
-  // never a reset.
-  static readonly STANDARD_ROLES = ['Manager', 'Planner', 'Viewer'];
-  readonly seedingRoles = signal(false);
-  readonly seedResult = signal<string | null>(null);
+  //
+  // "Set up standard roles": Viewer / Planner / Manager from
+  // CES_ROLE_SEED_SPEC.md, linked into the AUTH API's role model for this
+  // database. Roughly 300 writes against a client's live access control, so
+  // the flow is deliberately slow: preview -> type the db name -> apply
+  // with progress. Additive only. Never removes a privilege, never touches
+  // a role that already has privileges unless the operator opts that role
+  // in explicitly, never grants NEVER_SEED.
+  static readonly STANDARD_ROLES: StandardRoleName[] = ['Viewer', 'Planner', 'Manager'];
+
+  /** Visible to _manage_client_roles holders who are ALSO system managers.
+   *  A client admin who can edit a role should not necessarily be able to
+   *  mint the whole standard set. */
+  readonly canSeedStandardRoles = computed(() => this.canManageRoles() && this.session.isSystemManager());
 
   readonly missingStandardRoles = computed<string[]>(() => {
     const have = new Set(this.roles().map((r) => r.role_name.trim().toLowerCase()));
     return AccessControlComponent.STANDARD_ROLES.filter((n) => !have.has(n.toLowerCase()));
   });
 
+  readonly seedOpen = signal(false);
+  readonly seedStep = signal<'preview' | 'confirm' | 'apply' | 'done'>('preview');
+  readonly seedLoading = signal(false);
+  readonly seedError = signal<string | null>(null);
+  readonly seedPreview = signal<BundlePreview[]>([]);
+  readonly seedDbName = signal('');
+  readonly seedConfirmText = signal('');
+  readonly seedApply = signal<BundleApplyRow[]>([]);
+  readonly seedApplying = signal(false);
+
+  /** Total writes Apply will make, across every included bundle. */
+  readonly seedTotalToLink = computed(() =>
+    this.seedPreview().filter((b) => this.seedRowActive(b)).reduce((n, b) => n + b.toLink.length, 0),
+  );
+  readonly seedRolesToCreate = computed(() =>
+    this.seedPreview().filter((b) => b.state === 'create').map((b) => b.role),
+  );
+  /** What the operator must type. The db name normally; if the session
+   *  cannot resolve one, a literal so the flow is not silently unreachable. */
+  readonly seedConfirmWord = computed(() => this.seedDbName().trim() || 'CONFIRM');
+  readonly seedConfirmMatches = computed(() =>
+    this.seedConfirmText().trim().toLowerCase() === this.seedConfirmWord().toLowerCase(),
+  );
+
+  /** A preview row Apply will act on: missing/empty roles always; configured only if opted in. */
+  seedRowActive(b: BundlePreview): boolean {
+    return b.state !== 'configured' || b.include;
+  }
+
+  toggleSeedInclude(role: StandardRoleName): void {
+    this.seedPreview.update((rows) => rows.map((b) => (b.role === role ? { ...b, include: !b.include } : b)));
+  }
+
+  closeSeed(): void {
+    if (this.seedApplying()) return;
+    this.seedOpen.set(false);
+  }
+
+  /** Step 1 — read the catalogue and each role's current privileges, and
+   *  show exactly what Apply would do. Nothing is written here. */
+  async openSeedStandardRoles(): Promise<void> {
+    this.seedOpen.set(true);
+    this.seedStep.set('preview');
+    this.seedError.set(null);
+    this.seedPreview.set([]);
+    this.seedApply.set([]);
+    this.seedConfirmText.set('');
+    this.seedLoading.set(true);
+    try {
+      const [catalogue, dbName] = await Promise.all([
+        this.clientRoles.availablePrivileges(STANDARD_ROLE_UTILITY),
+        this.clientRoles.activeDbName(),
+      ]);
+      this.seedDbName.set(dbName);
+      if (catalogue.length === 0) {
+        throw new Error('The privilege catalogue for this database came back empty — nothing can be linked.');
+      }
+      const catalogueSet = new Set(catalogue);
+      const existing = new Map(
+        this.roles()
+          .filter((r) => r.utility_name === STANDARD_ROLE_UTILITY)
+          .map((r) => [r.role_name.trim().toLowerCase(), r] as const),
+      );
+
+      const rows: BundlePreview[] = [];
+      for (const bundle of STANDARD_ROLE_BUNDLES) {
+        const wanted = bundle.resolve(catalogue).filter((p) => !NEVER_SEED.has(p));
+        const cannotLink = wanted.filter((p) => !catalogueSet.has(p));
+        const linkable = wanted.filter((p) => catalogueSet.has(p));
+
+        const role = existing.get(bundle.role.toLowerCase());
+        let current: string[] = [];
+        if (role) {
+          current = await this.clientRoles.rolePrivileges(role.role_name, role.utility_name);
+        }
+        const currentSet = new Set(current);
+        const toLink = linkable.filter((p) => !currentSet.has(p));
+        const alreadyLinked = linkable.length - toLink.length;
+        const wantedSet = new Set(linkable);
+        const extra = current.filter((p) => !wantedSet.has(p)).length;
+
+        rows.push({
+          role: bundle.role,
+          summary: bundle.summary,
+          state: !role ? 'create' : current.length === 0 ? 'empty' : 'configured',
+          include: false,
+          cannotLink,
+          alreadyLinked,
+          toLink,
+          extra,
+        });
+      }
+      this.seedPreview.set(rows);
+    } catch (err: any) {
+      console.error('[AccessControl] standard roles preview failed:', err);
+      this.seedError.set(err?.message ?? 'Could not build the preview.');
+    } finally {
+      this.seedLoading.set(false);
+    }
+  }
+
+  /** Step 2 — nothing happens until the database name is typed back. */
+  goSeedConfirm(): void {
+    if (this.seedTotalToLink() === 0 && this.seedRolesToCreate().length === 0) return;
+    this.seedConfirmText.set('');
+    this.seedStep.set('confirm');
+  }
+
+  /**
+   * Step 3 — create missing roles, then link privileges, bundle by bundle,
+   * a few writes in flight at a time. Failures are collected per role and
+   * never stop the run; re-opening the preview afterwards shows only what
+   * is still missing, so a re-run is the retry.
+   */
+  async applySeedStandardRoles(): Promise<void> {
+    if (!this.seedConfirmMatches() || this.seedApplying()) return;
+    const rows = this.seedPreview().filter((b) => this.seedRowActive(b));
+    this.seedApply.set(rows.map((b) => ({ role: b.role, done: 0, total: b.toLink.length, failed: [], state: 'pending' })));
+    this.seedStep.set('apply');
+    this.seedApplying.set(true);
+    this.seedError.set(null);
+
+    const patch = (role: StandardRoleName, fn: (r: BundleApplyRow) => BundleApplyRow) =>
+      this.seedApply.update((list) => list.map((r) => (r.role === role ? fn(r) : r)));
+
+    try {
+      for (const b of rows) {
+        patch(b.role, (r) => ({ ...r, state: 'running' }));
+
+        if (b.state === 'create') {
+          try {
+            await this.clientRoles.createRole(b.role, STANDARD_ROLE_UTILITY);
+          } catch (err: any) {
+            patch(b.role, (r) => ({ ...r, state: 'failed', failed: [`create role: ${err?.message ?? 'failed'}`] }));
+            continue;
+          }
+        }
+
+        // Belt and braces: the bundles already exclude these, but this is
+        // the one place a mistake would grant the role-admin gate itself.
+        const queue = b.toLink.filter((p) => !NEVER_SEED.has(p));
+        const failed: string[] = [];
+        const POOL = 3;
+        let i = 0;
+        const worker = async () => {
+          while (i < queue.length) {
+            const priv = queue[i++];
+            let ok = false;
+            try {
+              ok = await this.clientRoles.assignPrivilege(b.role, priv, STANDARD_ROLE_UTILITY);
+            } catch {
+              ok = false;
+            }
+            if (!ok) failed.push(priv);
+            patch(b.role, (r) => ({ ...r, done: r.done + 1, failed: [...failed] }));
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(POOL, queue.length) }, worker));
+
+        patch(b.role, (r) => ({
+          ...r,
+          state: failed.length === 0 ? 'ok' : failed.length === queue.length ? 'failed' : 'partial',
+        }));
+      }
+      this.seedStep.set('done');
+      await this.load();
+    } finally {
+      this.seedApplying.set(false);
+    }
+  }
+
+  readonly seedingRoles = signal(false);
+  readonly seedResult = signal<string | null>(null);
+
+  /** The small "Create them" banner: create the missing standard roles
+   *  (empty). Linking their privileges is the full flow above. */
   async seedStandardRoles(): Promise<void> {
     const missing = this.missingStandardRoles();
     if (missing.length === 0) return;
@@ -179,7 +396,7 @@ export class AccessControlComponent implements OnInit {
     const failed: string[] = [];
     for (const name of missing) {
       try {
-        await this.clientRoles.createRole(name, 'GIS System');
+        await this.clientRoles.createRole(name, STANDARD_ROLE_UTILITY);
         created.push(name);
       } catch (err: any) {
         console.error('[AccessControl] seed role failed:', name, err);
@@ -190,7 +407,7 @@ export class AccessControlComponent implements OnInit {
     this.seedingRoles.set(false);
     this.seedResult.set(
       failed.length === 0
-        ? 'Created ' + created.join(', ') + '.'
+        ? 'Created ' + created.join(', ') + ' — empty. Use "Set up standard roles" to link their privileges.'
         : 'Created ' + (created.join(', ') || 'none') + '; failed: ' + failed.join(', ') + '.',
     );
   }
