@@ -4,12 +4,12 @@
  * change the spec and regenerate, so the button and any DB-creation seed
  * produce identical roles.
  *
- * Spec v2, 2026-09-11. Viewer 48 · Planner 84 (Viewer + 36) ·
+ * Spec v3, 2026-09-14 (decided). Viewer 48 · Planner 99 (Viewer + 51) ·
  * Manager = every privilege in the utility's catalogue except 2.
  *
- * Two privileges are still undecided in the spec (§0.2 `_report_update_sort_order`,
- * §0.3 `_theme_remove`). They appear in NO explicit list below, so they fall
- * to Manager via all-except — the safe default until product decides.
+ * Every placement is decided (14 Sep). Planner is the live role minus the
+ * Modules structure operations plus the Stock operator set; Viewer is the
+ * spec's 48; Manager is everything except the two role-admin gates.
  *
  * Bundles are applied against the AUTH API's role/privilege model — the one
  * every protected endpoint enforces — via ClientRolesService, never the
@@ -91,42 +91,57 @@ const VIEWER: readonly string[] = [
 ];
 
 const PLANNER_ADDS: readonly string[] = [
-  '_edit_editing_form',
-  '_edit_create',
-  '_edit_update',
-  '_edit_delete',
+  '_create_project',
+  '_change_project',
+  '_change_project_description',
+  '_delete_project',
   '_upload_attachment',
   '_delete_attachment',
   '_add_comment',
   '_delete_comment',
+  '_theme_create_public',
   '_theme_create_private',
-  '_theme_update_private',
-  '_theme_remove_private',
-  '_theme_set_render_order_private',
   '_theme_update',
+  '_theme_update_public',
+  '_theme_update_private',
+  '_theme_remove',
+  '_theme_remove_public',
+  '_theme_remove_private',
   '_theme_set_render_order',
+  '_theme_set_render_order_public',
+  '_theme_set_render_order_private',
+  '_theme_upload_qgz',
+  '_edit_editing_form',
+  '_edit_create',
+  '_edit_update',
+  '_edit_delete',
+  '_report_update_sort_order',
   '_report_editing_form',
   '_report_update_field',
-  '_report_write',
   '_report_upload_attachment',
   '_report_column_create',
   '_report_column_update',
   '_report_column_delete',
+  '_report_audit',
   '_report_workflow_create',
   '_report_workflow_update',
   '_report_workflow_delete',
-  '_report_audit',
-  '_import_data',
-  '_export_data',
-  '_conflicts_view',
-  '_conflicts_resolve',
+  '_get_locations_by_email',
+  '_find_closest_users',
+  '_all_users_last_location',
   '_modules_task_create',
   '_modules_task_update',
+  '_modules_task_delete',
   '_modules_subtask_create',
   '_modules_subtask_update',
+  '_modules_subtask_delete',
+  '_modules_audit_read',
+  '_conflicts_view',
+  '_conflicts_resolve',
   '_module_upload_attachment',
-  '_client_maps_create',
-  '_client_maps_update',
+  '_leave_project',
+  '_stock_transfer',
+  '_stock_request',
 ];
 
 export const STANDARD_ROLE_BUNDLES: readonly StandardRoleBundle[] = [
