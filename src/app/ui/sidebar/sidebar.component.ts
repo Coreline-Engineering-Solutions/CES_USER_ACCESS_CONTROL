@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { inject } from '@angular/core';
 import { LayoutService } from '../../services/layout.service';
+import { cesAppUrl } from '../../ces-hosts';
 
 /**
  * Left nav rail — mirrors CES_STOCK_MANAGER's sidebar (which itself mirrors
@@ -30,6 +31,9 @@ const ITEMS: NavItem[] = [
   styleUrl: './sidebar.component.scss',
 })
 export class SidebarComponent {
+  /** The other portal, in this environment - see ces-hosts.ts. */
+  readonly adminPortalUrl = cesAppUrl('access');
+
   readonly layout = inject(LayoutService);
   readonly items = ITEMS;
 }

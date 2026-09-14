@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { SessionService } from '../../session/session.service';
+import { cesAppUrl } from '../../ces-hosts';
 
 @Component({
   selector: 'app-navbar',
@@ -9,6 +10,9 @@ import { SessionService } from '../../session/session.service';
   styleUrl: './navbar.component.scss',
 })
 export class NavbarComponent implements OnInit {
+  /** Hub links follow the environment (prod vs qa) - see ces-hosts.ts. */
+  hubUrl(path: string): string { return cesAppUrl('hub', path); }
+
   readonly session = inject(SessionService);
 
   readonly showProfileMenu = signal(false);

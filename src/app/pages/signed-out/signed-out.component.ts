@@ -1,5 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { SessionService } from '../../session/session.service';
+import { cesAppUrl } from '../../ces-hosts';
 
 @Component({
   selector: 'app-signed-out',
@@ -15,6 +16,6 @@ export class SignedOutComponent {
   }
 
   signIn(): void {
-    window.location.href = 'https://www.corelineengineering.com/Login';
+    window.location.href = cesAppUrl('hub', '/Login');
   }
 }

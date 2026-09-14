@@ -1,6 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 import Cookies from 'js-cookie';
 import { UserSessionService } from '../../classes/ClassesAuth';
+import { cesAppUrl } from '../ces-hosts';
 
 export type SessionInfo = {
   session_gid: string;
@@ -478,7 +479,7 @@ export class SessionService {
 
   private redirectIfInvalidInProd() {
     if (this.isProdHost() && !this.isValid()) {
-      window.location.href = 'https://www.corelineengineering.com/Login';
+      window.location.href = cesAppUrl('hub', '/Login');
     }
   }
 
