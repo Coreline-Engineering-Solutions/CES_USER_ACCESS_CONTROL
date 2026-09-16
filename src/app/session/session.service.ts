@@ -537,7 +537,7 @@ export class SessionService {
     '_assign_db_admin',
   ]);
 
-  private privSet: { dbGid: string; privileges: ReadonlySet<string>; fetchedAt: number } | null = null;
+  private privSet: { sessionGid: string; dbGid: string; privileges: ReadonlySet<string>; fetchedAt: number } | null = null;
   private privInflight: Promise<void> | null = null;
   /** Per-(utility, privilege) cache for the Auth-API bootstrap checks only. */
   private readonly authPrivCache = new Map<string, boolean>();
@@ -562,7 +562,7 @@ export class SessionService {
     if (!sess) return false;
 
     if (SessionService.AUTH_API_PRIVILEGES.has(privilege)) {
-      const key = `${utility}::${privilege}`;
+      const key = `${sess.session_gid}::${utility}::${privilege}`;
       if (this.authPrivCache.has(key)) return this.authPrivCache.get(key)!;
       const result = await this.checkPermission(sess.session_gid, utility, privilege);
       this.authPrivCache.set(key, result);
@@ -579,7 +579,9 @@ export class SessionService {
    *  switch so this is populated. */
   hasPrivilegeSync(privilege: string): boolean {
     const dbGid = String(this.currentDb()?.db_gid ?? '').trim();
-    if (!dbGid || !this.privSet || this.privSet.dbGid !== dbGid) return false;
+    const sess = this.session();
+    if (!sess || !dbGid || !this.privSet) return false;
+    if (this.privSet.sessionGid !== sess.session_gid || this.privSet.dbGid !== dbGid) return false;
     return this.privSet.privileges.has(privilege);
   }
 
@@ -590,13 +592,16 @@ export class SessionService {
     const dbGid = String(db?.db_gid ?? '').trim();
     if (!dbGid) return null;
 
-    if (this.privSet && this.privSet.dbGid === dbGid) return this.privSet.privileges;
+    const sess = this.session();
+    if (!sess) return null;
+    const fresh = () => !!this.privSet && this.privSet.sessionGid === sess.session_gid && this.privSet.dbGid === dbGid;
+    if (fresh()) return this.privSet!.privileges;
 
     if (!this.privInflight) {
       this.privInflight = this.fetchPrivileges(dbGid).finally(() => { this.privInflight = null; });
     }
     await this.privInflight;
-    return this.privSet && this.privSet.dbGid === dbGid ? this.privSet.privileges : null;
+    return fresh() ? this.privSet!.privileges : null;
   }
 
   private async fetchPrivileges(dbGid: string): Promise<void> {
@@ -623,7 +628,8 @@ export class SessionService {
         console.warn('[Session] privileges fetched for', dbGid, 'but active db is now', nowDb, '— discarded');
         return;
       }
-      this.privSet = { dbGid, privileges: privs, fetchedAt: Date.now() };
+      if (this.session()?.session_gid !== sess.session_gid) { console.warn('[Session] privileges fetched but session changed — discarded'); return; }
+      this.privSet = { sessionGid: sess.session_gid, dbGid, privileges: privs, fetchedAt: Date.now() };
       this.privilegesDbGid.set(dbGid);
       this.privilegesEmpty.set(privs.size === 0);
     } catch (err) {
