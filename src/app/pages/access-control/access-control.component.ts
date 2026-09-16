@@ -5,6 +5,7 @@ import { SessionService } from '../../session/session.service';
 import { DbUsersService } from '../../services/db-users.service';
 import { AdminUsersService, NewUserDraft } from '../../services/admin-users.service';
 import { ClientRolesService } from '../../services/client-roles.service';
+import { RolesApiService } from '../../services/roles-api.service';
 import {
   NEVER_SEED,
   STANDARD_ROLE_BUNDLES,
@@ -66,6 +67,8 @@ export class AccessControlComponent implements OnInit {
   readonly dbUsers = inject(DbUsersService); // template reads dbUsers.users() for email dropdowns
   private readonly adminUsers = inject(AdminUsersService);
   private readonly clientRoles = inject(ClientRolesService);
+  /** Client-local `/roles/*` on the GIS API - the second store under dual-check. */
+  private readonly rolesApi = inject(RolesApiService);
 
   readonly activeTab = signal<Tab>('users');
   readonly loading = signal(true);
@@ -835,9 +838,59 @@ export class AccessControlComponent implements OnInit {
     }
   }
 
-  /** Pre-fills the assign form below the table for one user. */
+  /**
+   * Opens the assign-role modal for one user. Used to only pre-fill the
+   * form ABOVE the table - off-screen for anyone scrolled down to the row,
+   * so the button read as dead ("not opening or triggering", 16 Sep).
+   */
   assignRoleTo(email: string): void {
     this.assignEmail.set(email);
+    this.assignRoleGid.set('');
+    this.assignError.set(null);
+    this.assignMirrorNote.set(null);
+    this.assignModalOpen.set(true);
+  }
+
+  readonly assignModalOpen = signal(false);
+  closeAssignModal(): void {
+    this.assignModalOpen.set(false);
+  }
+
+  /**
+   * What happened on the client-local side of the last assign / revoke -
+   * shown so an operator can tell the two stores apart while dual-check is on.
+   */
+  readonly assignMirrorNote = signal<string | null>(null);
+
+  /**
+   * Dual-check (16 Sep): with `USE_CLIENT_PERMISSIONS` on, the GIS API
+   * requires the privilege in BOTH the Auth API role AND a client-local
+   * role (`admin.client_user_roles` on the active DB). A user with only the
+   * Auth role gets 403 on everything - what michael's mobile user hit on QA.
+   * So every assign / revoke here also writes the client-local store, matched
+   * by role NAME (the two stores share Manager / Planner / Viewer). Best
+   * effort: a missing or ambiguous client-local role is reported, not fatal -
+   * the Auth write is the one that has always mattered and still does.
+   */
+  private async mirrorUserRole(action: 'assign' | 'revoke', email: string, roleName: string): Promise<string> {
+    try {
+      const res = await this.rolesApi.rolesList();
+      const rows = (Array.isArray(res) ? res : (res as any)?.roles) ?? [];
+      const hits = rows.filter((r: any) => String(r?.role_name ?? '').trim().toLowerCase() === roleName.trim().toLowerCase());
+      if (hits.length === 0) return `Client-local: no "${roleName}" role on this database - not ${action === 'assign' ? 'assigned' : 'revoked'} there. Seed the standard roles first.`;
+      if (hits.length > 1) return `Client-local: "${roleName}" exists ${hits.length} times on this database (duplicate roles) - skipped. Tiaan is cleaning these up.`;
+      const payload = { user_email: email, role_gid: String(hits[0].role_gid) };
+      const out: any = action === 'assign'
+        ? await this.rolesApi.userRoleAssign(payload)
+        : await this.rolesApi.userRoleRevoke(payload);
+      const ok = out?.response === '_S' || out?.success === true || out === true;
+      return ok
+        ? `Client-local: ${action === 'assign' ? 'assigned' : 'revoked'} too.`
+        : `Client-local: the API did not confirm the ${action} (${JSON.stringify(out?.response ?? out)}).`;
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail ?? err?.message ?? String(err);
+      return `Client-local: ${action} failed - ${typeof detail === 'string' ? detail : JSON.stringify(detail)}.`;
+    }
   }
 
   // ─── User-role assignments ──────────────────────────────────────────────
@@ -968,7 +1021,9 @@ export class AccessControlComponent implements OnInit {
       if (!(await this.clientRoles.assignUserRole(email, role, utility))) {
         throw new Error('The auth API did not confirm the role assignment.');
       }
+      this.assignMirrorNote.set(await this.mirrorUserRole('assign', email, role));
       this.assignEmail.set('');
+      this.assignModalOpen.set(false);
       await this.load();
     } catch (err: any) {
       console.error('[AccessControl] user role assign failed:', err);
@@ -1003,6 +1058,7 @@ export class AccessControlComponent implements OnInit {
       if (!(await this.clientRoles.removeUserRole(email, a.role_name, utility))) {
         throw new Error('The auth API did not confirm the revoke.');
       }
+      this.assignMirrorNote.set(await this.mirrorUserRole('revoke', email, a.role_name));
       this.revokeAssignmentTarget.set(null);
       await this.load();
     } catch (err: any) {

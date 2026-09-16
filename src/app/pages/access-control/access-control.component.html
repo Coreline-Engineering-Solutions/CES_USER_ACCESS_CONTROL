@@ -209,6 +209,9 @@
             </div>
           </div>
           <button class="btn primary" [disabled]="assigning()" (click)="assignRole()">{{ assigning() ? 'Saving…' : 'Assign role' }}</button>
+          @if (assignMirrorNote(); as note) {
+            <div class="hiernote" style="margin-top:10px"><span class="i">i</span><span>{{ note }}</span></div>
+          }
         </div>
       }
 
@@ -458,6 +461,47 @@
 }
 
 <!-- Revoke user-role assignment (needs email — list only carries user_gid) -->
+@if (assignModalOpen()) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="Assign role">
+    <div class="modal" style="width:460px">
+      <div class="m-h">
+        <h3>Assign a role</h3>
+        <button class="x" (click)="closeAssignModal()" aria-label="Close">✕</button>
+      </div>
+      <div class="m-sec">
+        @if (assignError()) { <div class="hiernote warn"><span class="i">!</span><span>{{ assignError() }}</span></div> }
+        <div class="field">
+          <label>User email</label>
+          @if (dbUsers.users().length > 0) {
+            <select class="sel" [ngModel]="assignEmail()" (ngModelChange)="assignEmail.set($event)">
+              <option value="">— select a user —</option>
+              @for (u of dbUsers.users(); track u.email) { <option [value]="u.email">{{ u.email }}</option> }
+            </select>
+          } @else {
+            <input class="inp" [ngModel]="assignEmail()" (ngModelChange)="assignEmail.set($event)" placeholder="user@example.com">
+          }
+        </div>
+        <div class="field" style="margin-top:10px">
+          <label>Role</label>
+          <select class="sel" [ngModel]="assignRoleGid()" (ngModelChange)="assignRoleGid.set($event)">
+            <option value="">— select —</option>
+            @for (r of roles(); track r.role_gid) { <option [value]="r.role_gid">{{ r.role_name }}</option> }
+          </select>
+        </div>
+        <p style="color:var(--gc-text-muted);font-size:12px;margin-top:10px">
+          Written to the central auth role and to this database's client-local role of the same name.
+        </p>
+      </div>
+      <div class="m-f">
+        <button class="btn" (click)="closeAssignModal()">Cancel</button>
+        <button class="btn primary" style="margin-left:auto" [disabled]="assigning() || !assignEmail() || !assignRoleGid()" (click)="assignRole()">
+          {{ assigning() ? 'Saving…' : 'Assign role' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
 @if (revokeAssignmentTarget(); as a) {
   <div class="scrim on" role="dialog" aria-modal="true" aria-label="Revoke role">
     <div class="modal" style="width:420px">
