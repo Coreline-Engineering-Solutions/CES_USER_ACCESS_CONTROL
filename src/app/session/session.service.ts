@@ -424,6 +424,7 @@ export class SessionService {
     this.clearPrivileges();
 
     try {
+      const setAt = Date.now();
       const res = await fetch(`${this.AUTH_API}/auth/db/set`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -449,10 +450,24 @@ export class SessionService {
       }
 
       // 2. GIS API sees it too — this is the one that actually gates data.
+      //    /auth/db/set does NOT touch the GIS API's 60 s session→db cache
+      //    (tiaan, 16 Sep). Preferred: ask it to drop the cache, then poll
+      //    its own view. Neither endpoint exists yet → wait the TTL out.
+      const invalidated = await this.invalidateGisDbCache();
       start = Date.now();
       let gisOk = false;
       while (Date.now() - start < GIS_MAX_WAIT_MS) {
         const gisDb = await this.fetchGisCurrentDbGid();
+        if (gisDb === null) {
+          if (invalidated) { gisOk = true; break; } // cache dropped server-side; next call re-resolves
+          const remaining = SessionService.GIS_DB_CACHE_TTL_MS - (Date.now() - setAt);
+          if (remaining > 0) {
+            console.warn('[Session] DB switch: GIS API has no /admin/db/current or /admin/db/invalidate-cache yet — waiting out its', Math.ceil(remaining / 1000), 's cache TTL before proceeding');
+            await new Promise((r) => setTimeout(r, remaining));
+          }
+          gisOk = true;
+          break;
+        }
         if (gisDb === db_gid) { gisOk = true; break; }
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
       }
@@ -460,6 +475,7 @@ export class SessionService {
         console.warn('[Session] DB switch: GIS API still resolving the previous db after', GIS_MAX_WAIT_MS, 'ms — refusing to proceed');
         return false;
       }
+      console.log('[Session] DB switch confirmed after', Date.now() - setAt, 'ms ->', db_gid);
 
       // 3. Commit locally and warm the new db's privileges.
       await this.fetchCurrentDb();
@@ -487,8 +503,10 @@ export class SessionService {
   }
 
   /** The db_gid the GIS API currently resolves this session to — its own
-   *  view, which can lag the Auth API's by up to 60s. '' on any failure. */
-  private async fetchGisCurrentDbGid(): Promise<string> {
+   *  view, which can lag the Auth API's by up to 60s. '' on failure;
+   *  `null` when the GIS API doesn't expose the endpoint at all (404),
+   *  which is the case until tiaan's one-liner ships. */
+  private async fetchGisCurrentDbGid(): Promise<string | null> {
     const sess = this.session();
     if (!sess) return '';
     try {
@@ -497,11 +515,34 @@ export class SessionService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_gid: sess.session_gid }),
       });
+      if (res.status === 404) return null;
       if (!res.ok) return '';
       const data: any = await res.json();
       return String(data?.db_gid ?? data?.data?.db_gid ?? '').trim();
     } catch { return ''; }
   }
+
+  /** Ask the GIS API to drop its cached session→db_gid (proposed
+   *  `POST /admin/db/invalidate-cache`). true = it did; false = endpoint
+   *  missing or failed, so the 60 s TTL must be waited out instead. */
+  private async invalidateGisDbCache(): Promise<boolean> {
+    const sess = this.session();
+    if (!sess) return false;
+    try {
+      const res = await fetch(`${environment.apiBaseUrl}/admin/db/invalidate-cache`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_gid: sess.session_gid }),
+      });
+      return res.ok;
+    } catch { return false; }
+  }
+
+  /** GIS API cache TTL (`DB_GID_CACHE_TTL_SECONDS`, auth_client.py) plus a
+   *  margin. Waited out only when the GIS API can neither confirm nor
+   *  invalidate — slow, but never serves the previous client's data under
+   *  the new label. */
+  private static readonly GIS_DB_CACHE_TTL_MS = 60_000 + 2_000;
 
   // ─── Privileges ────────────────────────────────────────────────────────
   //
