@@ -62,3 +62,20 @@ export function toEnvUrl(url: string): string {
     return url;
   }
 }
+
+// ─── GIS API per environment ─────────────────────────────────────────────────
+// tiaan stood up a QA copy of gis-api (15 Sep): `gis-api-qa.corelinegis.com`,
+// auto-deployed from every commit to its main; production is promoted by hand.
+// A page on a QA host talks to the QA API, so fixes land there first and are
+// tested on the QA sites before promotion - the same rule as the frontends.
+// Same databases, same Auth API; only the API build differs.
+const GIS_API_QA = 'https://gis-api-qa.corelinegis.com';
+
+/**
+ * The gis-api base URL for the environment the page is on. `prod` is the
+ * app's own production value (some apps use the CDN host, some the direct
+ * onrender host) so production behaviour is unchanged by this helper.
+ */
+export function cesGisApiUrl(prod: string = 'https://gis-api.corelinegis.com'): string {
+  return isQaHost() ? GIS_API_QA : prod;
+}
