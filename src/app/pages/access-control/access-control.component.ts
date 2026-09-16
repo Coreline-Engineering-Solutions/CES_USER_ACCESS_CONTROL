@@ -864,6 +864,9 @@ export class AccessControlComponent implements OnInit {
 
   ngOnInit(): void {
     void this.load();
+    // Warm the active db's client-local privilege set so hasPrivilegeSync()
+    // and the fail-closed banner have an answer, not a race.
+    void this.session.ensurePrivileges();
     void this.session.hasPrivilege('_manage_client_roles').then((v) => this.canManageRoles.set(v));
     // Toolsets are NOT loaded here. See loadToolsetsFor() — doing it per user
     // on page load put ~20 simultaneous requests on the shared auth service

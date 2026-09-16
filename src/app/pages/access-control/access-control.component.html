@@ -4,6 +4,22 @@
     <span class="sub">Your company's users, roles and tool access — on the selected database only</span>
   </div>
 
+  <!-- Fail-closed privilege state. The GIS API returns an EMPTY privilege set
+       for a client database whose access-control schema hasn't been seeded,
+       and the backend fails OPEN there for backward compat. This app does
+       not: an empty set hides everything privileged, so nothing is ever shown
+       for a client that hasn't been set up. Say so, or it reads as broken. -->
+  @if (session.privilegesEmpty()) {
+    <div class="hiernote warn" style="margin:0 18px 12px">
+      <span class="i">!</span>
+      <span>
+        <strong>No privileges found for you on this database.</strong>
+        Privileged actions are hidden until this client's roles and privileges have been seeded and you've been
+        assigned a role. If you expect access here, ask a platform admin to check the database's access-control setup.
+      </span>
+    </div>
+  }
+
   <div class="subtabs" role="tablist">
     <button class="subtab" [class.on]="activeTab() === 'users'" (click)="setTab('users')">User assignments</button>
     <button class="subtab" [class.on]="activeTab() === 'projects'" (click)="setTab('projects')">Projects</button>

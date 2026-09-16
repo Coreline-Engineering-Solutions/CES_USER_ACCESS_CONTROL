@@ -2,6 +2,7 @@ import { Injectable, computed, signal } from '@angular/core';
 import Cookies from 'js-cookie';
 import { UserSessionService } from '../../classes/ClassesAuth';
 import { cesAppUrl } from '../ces-hosts';
+import { environment } from '../../environments/environment';
 
 export type SessionInfo = {
   session_gid: string;
@@ -391,16 +392,40 @@ export class SessionService {
   }
 
   /**
-   * Flips the session's active DB, then polls /auth/db/current until the
-   * backend confirms it — reloading before that confirmation lands the new
-   * page against the OLD DB context (stale data), so callers must not
-   * reload on a `false` return.
+   * Switch the session's active database. Returns true only once BOTH the
+   * Auth API and the GIS API agree the switch has landed.
+   *
+   * Why both: the GIS API caches session→db_gid for 60s
+   * (DB_GID_CACHE_TTL_SECONDS, auth_client.py:89). Switching via the Auth
+   * API alone leaves the GIS API resolving the OLD client for up to a minute
+   * — every /roles/*, /stock/*, /modules/* call in that window reads the
+   * previous client's tables under the new client's label. Confirming the
+   * Auth side (the old behaviour) proves nothing about that. So we also poll
+   * the GIS API's own /admin/db/current until it reports the new db_gid.
+   *
+   * Ordering matters for isolation:
+   *   1. clearPrivileges() FIRST — nothing may serve the old set during the
+   *      transition. hasPrivilege() answers false until the new set lands.
+   *   2. switch, confirm Auth, confirm GIS.
+   *   3. only then set currentDb and prefetch the new db's privileges.
+   * If confirmation times out we return false, leave currentDb untouched and
+   * privileges empty — the old client's set is never served under the new
+   * label. Callers must not reload on false.
+   *
+   * SWITCH_ENDPOINT: tiaan's guidance is to route the switch through the GIS
+   * API's cache-invalidating endpoint so step 2 is instant rather than
+   * eventual. Which endpoint/body is pending his confirmation (cutover thread
+   * c5013ced). Until then this uses the Auth API and relies on the GIS-side
+   * poll below, which is correct either way — just slower on a cold cache.
    */
   async setCurrentDb(db_gid: string): Promise<boolean> {
     const sess = this.session();
     if (!sess) return false;
 
+    this.clearPrivileges();
+
     try {
+      const setAt = Date.now();
       const res = await fetch(`${this.AUTH_API}/auth/db/set`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -409,41 +434,258 @@ export class SessionService {
       await res.json();
 
       const POLL_INTERVAL_MS = 400;
-      const MAX_WAIT_MS = 8000;
-      const start = Date.now();
-      while (Date.now() - start < MAX_WAIT_MS) {
-        const current = await this.fetchCurrentDb();
-        const liveDbGid = String(current?.db_gid ?? '').trim();
-        if (liveDbGid === db_gid) return true;
+      const AUTH_MAX_WAIT_MS = 8000;
+      const GIS_MAX_WAIT_MS = 15000;
+
+      // 1. Auth API sees it.
+      let start = Date.now();
+      let authOk = false;
+      while (Date.now() - start < AUTH_MAX_WAIT_MS) {
+        const current = await this.fetchCurrentDbRaw();
+        if (String(current?.db_gid ?? '').trim() === db_gid) { authOk = true; break; }
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
       }
+      if (!authOk) {
+        console.warn('[Session] DB switch: Auth API never confirmed', db_gid, 'within', AUTH_MAX_WAIT_MS, 'ms');
+        return false;
+      }
 
-      console.warn('[Session] DB switch confirmation timed out after', MAX_WAIT_MS, 'ms');
-      return false;
+      // 2. GIS API sees it too — this is the one that actually gates data.
+      //    /auth/db/set does NOT touch the GIS API's 60 s session→db cache
+      //    (tiaan, 16 Sep). Preferred: ask it to drop the cache, then poll
+      //    its own view. Neither endpoint exists yet → wait the TTL out.
+      const invalidated = await this.invalidateGisDbCache();
+      start = Date.now();
+      let gisOk = false;
+      while (Date.now() - start < GIS_MAX_WAIT_MS) {
+        const gisDb = await this.fetchGisCurrentDbGid();
+        if (gisDb === null) {
+          if (invalidated) { gisOk = true; break; } // cache dropped server-side; next call re-resolves
+          const remaining = SessionService.GIS_DB_CACHE_TTL_MS - (Date.now() - setAt);
+          if (remaining > 0) {
+            console.warn('[Session] DB switch: GIS API has no /admin/db/current or /admin/db/invalidate-cache yet — waiting out its', Math.ceil(remaining / 1000), 's cache TTL before proceeding');
+            await new Promise((r) => setTimeout(r, remaining));
+          }
+          gisOk = true;
+          break;
+        }
+        if (gisDb === db_gid) { gisOk = true; break; }
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      }
+      if (!gisOk) {
+        console.warn('[Session] DB switch: GIS API still resolving the previous db after', GIS_MAX_WAIT_MS, 'ms — refusing to proceed');
+        return false;
+      }
+      console.log('[Session] DB switch confirmed after', Date.now() - setAt, 'ms ->', db_gid);
+
+      // 3. Commit locally and warm the new db's privileges.
+      await this.fetchCurrentDb();
+      void this.ensurePrivileges();
+      return true;
     } catch (err) {
       console.error('[Session] Failed to set DB:', err);
       return false;
     }
   }
 
-  private readonly privilegeCache = new Map<string, boolean>();
+  /** /auth/db/current WITHOUT writing currentDb — used while confirming a
+   *  switch so a half-landed state never becomes the app's active db. */
+  private async fetchCurrentDbRaw(): Promise<any> {
+    const sess = this.session();
+    if (!sess) return null;
+    try {
+      const res = await fetch(`${this.AUTH_API}/auth/db/current`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_gid: sess.session_gid }),
+      });
+      return await res.json();
+    } catch { return null; }
+  }
+
+  /** The db_gid the GIS API currently resolves this session to — its own
+   *  view, which can lag the Auth API's by up to 60s. '' on failure;
+   *  `null` when the GIS API doesn't expose the endpoint at all (404),
+   *  which is the case until tiaan's one-liner ships. */
+  private async fetchGisCurrentDbGid(): Promise<string | null> {
+    const sess = this.session();
+    if (!sess) return '';
+    try {
+      const res = await fetch(`${environment.apiBaseUrl}/admin/db/current`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_gid: sess.session_gid }),
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) return '';
+      const data: any = await res.json();
+      return String(data?.db_gid ?? data?.data?.db_gid ?? '').trim();
+    } catch { return ''; }
+  }
+
+  /** Ask the GIS API to drop its cached session→db_gid (proposed
+   *  `POST /admin/db/invalidate-cache`). true = it did; false = endpoint
+   *  missing or failed, so the 60 s TTL must be waited out instead. */
+  private async invalidateGisDbCache(): Promise<boolean> {
+    const sess = this.session();
+    if (!sess) return false;
+    try {
+      const res = await fetch(`${environment.apiBaseUrl}/admin/db/invalidate-cache`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_gid: sess.session_gid }),
+      });
+      return res.ok;
+    } catch { return false; }
+  }
+
+  /** GIS API cache TTL (`DB_GID_CACHE_TTL_SECONDS`, auth_client.py) plus a
+   *  margin. Waited out only when the GIS API can neither confirm nor
+   *  invalidate — slow, but never serves the previous client's data under
+   *  the new label. */
+  private static readonly GIS_DB_CACHE_TTL_MS = 60_000 + 2_000;
+
+  // ─── Privileges ────────────────────────────────────────────────────────
+  //
+  // ISOLATION INVARIANT — this is the cross-client exposure boundary. Do not
+  // weaken it. (Cutover thread 8ba7fa15; docs://gis_api/client-roles-and-profile.md)
+  //
+  //  1. Client-local privileges are populated ONLY from POST /roles/my-privileges.
+  //     Its body is { session_gid } and nothing else — the GIS API resolves the
+  //     client DB from the session server-side. There is no way to read another
+  //     client's set with a valid session. Confirmed by tiaan 16 Sep.
+  //  2. The set is stored WITH the db_gid it was fetched for. hasPrivilege()
+  //     refuses to answer from a set whose db_gid !== the current db — it
+  //     re-fetches instead of guessing.
+  //  3. Dropped on setCurrentDb() and logout().
+  //  4. FAIL-CLOSED. An empty set (AC schema not seeded on that client DB)
+  //     means NO privileges. The backend fails open there by design for
+  //     backward compat; the UI deliberately does not — a locked unseeded
+  //     client is the correct signal that a pre-cutover step was skipped.
+  //     Confirmed by tiaan 16 Sep.
+  //  5. Only the bootstrap privileges that remain in the central Auth API go
+  //     through _check_function_permission. Everything else is client-local.
+  //
+  // The previous cache was keyed `utility::privilege` with no db_gid and was
+  // never cleared on a DB switch — Manager on client A, switch to client B as
+  // a Viewer, and A's cached `_stock_admin=true` drew admin controls over B's
+  // data. That was live before this change.
+
+  /** Bootstrap privileges that stay in the central Auth API (session-level,
+   *  not per-client-DB). `_assign_db_admin` is planned but not built yet. */
+  private static readonly AUTH_API_PRIVILEGES: ReadonlySet<string> = new Set([
+    '_manage_client_roles',
+    '_list_user_projects',
+    '_assign_db_admin',
+  ]);
+
+  private privSet: { sessionGid: string; dbGid: string; privileges: ReadonlySet<string>; fetchedAt: number } | null = null;
+  private privInflight: Promise<void> | null = null;
+  /** Per-(utility, privilege) cache for the Auth-API bootstrap checks only. */
+  private readonly authPrivCache = new Map<string, boolean>();
+
+  /** True when the active db returned an EMPTY privilege set — i.e. the AC
+   *  schema isn't seeded there. UI should surface this plainly (fail-closed
+   *  means everything privileged is hidden) rather than looking broken. */
+  readonly privilegesEmpty = signal<boolean>(false);
+  /** db_gid the current privilege set belongs to, or '' — for diagnostics. */
+  readonly privilegesDbGid = signal<string>('');
 
   /**
-   * Checks an Auth-API privilege (e.g. `_manage_client_roles`/`_stock_admin`
-   * — see STOCK_ROLES_API_HANDOVER.md) via `_check_function_permission`,
-   * same mechanism `isSystemManager` already uses internally. Cached per
-   * (utility, privilege) pair for the life of the session.
+   * Does the current user hold `privilege` on the ACTIVE client database?
+   *
+   * Client-local privileges: a set lookup against /roles/my-privileges for
+   * the current db (fetched on demand, single-flight, discarded on switch).
+   * Bootstrap Auth-API privileges: `_check_function_permission` as before.
+   * `utility` only applies to the latter; client-local names are global.
    */
   async hasPrivilege(privilege: string, utility: string = 'GIS System'): Promise<boolean> {
-    const key = `${utility}::${privilege}`;
-    if (this.privilegeCache.has(key)) return this.privilegeCache.get(key)!;
-
     const sess = this.session();
     if (!sess) return false;
 
-    const result = await this.checkPermission(sess.session_gid, utility, privilege);
-    this.privilegeCache.set(key, result);
-    return result;
+    if (SessionService.AUTH_API_PRIVILEGES.has(privilege)) {
+      const key = `${sess.session_gid}::${utility}::${privilege}`;
+      if (this.authPrivCache.has(key)) return this.authPrivCache.get(key)!;
+      const result = await this.checkPermission(sess.session_gid, utility, privilege);
+      this.authPrivCache.set(key, result);
+      return result;
+    }
+
+    const set = await this.ensurePrivileges();
+    return set ? set.has(privilege) : false; // null = no active db / fetch failed → closed
+  }
+
+  /** Synchronous read of the CURRENT db's set, for templates that can't
+   *  await. Returns false if the set isn't loaded or belongs to another db —
+   *  never a stale answer. Call ensurePrivileges() once on boot / after a
+   *  switch so this is populated. */
+  hasPrivilegeSync(privilege: string): boolean {
+    const dbGid = String(this.currentDb()?.db_gid ?? '').trim();
+    const sess = this.session();
+    if (!sess || !dbGid || !this.privSet) return false;
+    if (this.privSet.sessionGid !== sess.session_gid || this.privSet.dbGid !== dbGid) return false;
+    return this.privSet.privileges.has(privilege);
+  }
+
+  /** The active db's privilege set, fetching it if missing or stale. `null`
+   *  when there is no active db or the fetch failed (fail-closed). */
+  async ensurePrivileges(): Promise<ReadonlySet<string> | null> {
+    const db = await this.ensureCurrentDb();
+    const dbGid = String(db?.db_gid ?? '').trim();
+    if (!dbGid) return null;
+
+    const sess = this.session();
+    if (!sess) return null;
+    const fresh = () => !!this.privSet && this.privSet.sessionGid === sess.session_gid && this.privSet.dbGid === dbGid;
+    if (fresh()) return this.privSet!.privileges;
+
+    if (!this.privInflight) {
+      this.privInflight = this.fetchPrivileges(dbGid).finally(() => { this.privInflight = null; });
+    }
+    await this.privInflight;
+    return fresh() ? this.privSet!.privileges : null;
+  }
+
+  private async fetchPrivileges(dbGid: string): Promise<void> {
+    const sess = this.session();
+    if (!sess) return;
+    try {
+      const res = await fetch(`${environment.apiBaseUrl}/roles/my-privileges`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_gid: sess.session_gid }),
+      });
+      if (!res.ok) {
+        console.warn('[Session] /roles/my-privileges ->', res.status, '— privileges stay closed');
+        return;
+      }
+      const data: any = await res.json();
+      const list: unknown = data?.privileges;
+      const privs = new Set<string>(Array.isArray(list) ? list.map(String) : []);
+
+      // The db may have moved while this was in flight. A set that belongs
+      // to a db we're no longer on is exactly the cross-client leak — drop it.
+      const nowDb = String(this.currentDb()?.db_gid ?? '').trim();
+      if (nowDb !== dbGid) {
+        console.warn('[Session] privileges fetched for', dbGid, 'but active db is now', nowDb, '— discarded');
+        return;
+      }
+      if (this.session()?.session_gid !== sess.session_gid) { console.warn('[Session] privileges fetched but session changed — discarded'); return; }
+      this.privSet = { sessionGid: sess.session_gid, dbGid, privileges: privs, fetchedAt: Date.now() };
+      this.privilegesDbGid.set(dbGid);
+      this.privilegesEmpty.set(privs.size === 0);
+    } catch (err) {
+      console.error('[Session] /roles/my-privileges failed — privileges stay closed:', err);
+    }
+  }
+
+  /** Drop every cached privilege answer. Called on db switch and logout. */
+  clearPrivileges(): void {
+    this.privSet = null;
+    this.privInflight = null;
+    this.authPrivCache.clear();
+    this.privilegesEmpty.set(false);
+    this.privilegesDbGid.set('');
   }
 
   readCookie(name: string): string | null {
@@ -473,11 +715,16 @@ export class SessionService {
     this.session.set(null);
     this.accessList.set([]);
     this.isSystemManager.set(false);
-    this.privilegeCache.clear();
+    this.clearPrivileges();
     this.redirectIfInvalidInProd();
   }
 
   private redirectIfInvalidInProd() {
+    // /DashBoard, not /Login directly — matches GIS/AC's pattern. It's
+    // gated by CES_WEB's own authGuard, which bounces to /Login only if
+    // the user isn't logged in centrally at all; if they *are* logged in
+    // but just lack this app's access, they land on their dashboard
+    // instead of being shown a login form while already signed in.
     if (this.isProdHost() && !this.isValid()) {
       window.location.href = cesAppUrl('hub', '/Login');
     }
