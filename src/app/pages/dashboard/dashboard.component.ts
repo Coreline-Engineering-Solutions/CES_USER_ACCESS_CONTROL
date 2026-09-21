@@ -2,6 +2,7 @@ import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { StockAccessApiService } from '../../services/stock-access-api.service';
 import { ClientRolesService } from '../../services/client-roles.service';
+import { DbUsersService } from '../../services/db-users.service';
 import { SessionService } from '../../session/session.service';
 import { AccessRole, LocationAccessGrant, StockLocation } from '../../services/stock-access.types';
 import { ClientPrivilege, ClientRole, UserRoleAssignment } from '../../services/roles.types';
@@ -26,6 +27,9 @@ export class DashboardComponent implements OnInit {
   private readonly stockAccess = inject(StockAccessApiService);
   private readonly clientRoles = inject(ClientRolesService);
   readonly session = inject(SessionService);
+  /** gid -> email for the "recent assignments" list — /roles/users/list
+   *  carries user_gid only. */
+  private readonly dbUsers = inject(DbUsersService);
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -66,14 +70,20 @@ export class DashboardComponent implements OnInit {
   /** Widest bar in the by-role list, so bars scale to the data rather than to a fixed max. */
   readonly maxRoleCount = computed(() => Math.max(1, ...this.byRole().map((r) => r.count)));
 
-  readonly recentAssignments = computed(() =>
-    [...this.assignments()]
+  readonly recentAssignments = computed(() => {
+    const emailByGid = new Map(this.dbUsers.users().map((u) => [String(u.user_gid ?? ''), String(u.email ?? '')]));
+    return [...this.assignments()]
       .sort((a, b) => String(b.assigned_date ?? '').localeCompare(String(a.assigned_date ?? '')))
-      .slice(0, 8),
-  );
+      .slice(0, 8)
+      .map((a) => ({
+        ...a,
+        who: a.user_email || emailByGid.get(String(a.user_gid ?? '')) || `${String(a.user_gid ?? '').slice(0, 8)}…`,
+      }));
+  });
 
   ngOnInit(): void {
     void this.load();
+    void this.dbUsers.ensureLoaded();
   }
 
   async load(): Promise<void> {

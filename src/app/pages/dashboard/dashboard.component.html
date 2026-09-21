@@ -100,7 +100,7 @@
           <div class="holdings">
             @for (a of recentAssignments(); track a.user_gid + a.role_gid) {
               <div class="hrow">
-                <span class="hc">{{ a.user_gid.slice(0, 8) }}…</span>
+                <span class="hc" [title]="a.user_gid">{{ a.who }}</span>
                 <span>{{ a.role_name }}</span>
                 <span class="hv">{{ a.assigned_date ? a.assigned_date.slice(0, 10) : '—' }}</span>
               </div>
