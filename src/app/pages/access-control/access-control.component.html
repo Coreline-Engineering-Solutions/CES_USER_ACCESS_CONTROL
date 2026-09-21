@@ -71,7 +71,7 @@
     @if (activeTab() === 'roles') {
       <div class="hiernote">
         <span class="i">i</span>
-        <span>Roles and their privileges live on the auth API, scoped to this database — the same roles every CES tool checks on each request. Link privileges to a role here, then assign the role to users in the next tab. Changes are enforced immediately; users see them after their next sign-in.</span>
+        <span>These roles live in <strong>this database</strong> and are what every CES tool reads for the people on it — each client has its own Manager, Planner and Viewer with their own privileges. Link privileges to a role here, then assign the role to users in the next tab. Changes take effect on the user's next request.</span>
       </div>
 
       <!-- Roles list. Single full-width column - the privileges table that
@@ -159,7 +159,7 @@
                   @if (canManageRoles()) {
                     <td class="actions" style="white-space:nowrap">
                       <button class="btn" (click)="openRolePrivileges(r)">Privileges</button>
-                      <button class="btn" (click)="deleteRole(r)">Delete</button>
+                      <button class="btn" [disabled]="r.is_system || deletingRoleGid() === r.role_gid" [title]="r.is_system ? 'System role — cannot be deleted here' : 'Delete this role from this database'" (click)="deleteRole(r)">{{ deletingRoleGid() === r.role_gid ? 'Deleting…' : 'Delete' }}</button>
                     </td>
                   }
                 </tr>
@@ -209,9 +209,6 @@
             </div>
           </div>
           <button class="btn primary" [disabled]="assigning()" (click)="assignRole()">{{ assigning() ? 'Saving…' : 'Assign role' }}</button>
-          @if (assignMirrorNote(); as note) {
-            <div class="hiernote" style="margin-top:10px"><span class="i">i</span><span>{{ note }}</span></div>
-          }
         </div>
       }
 
@@ -307,8 +304,20 @@
           <div class="field"><label>Privilege</label><input class="inp" [ngModel]="checkPrivilegeInput()" (ngModelChange)="checkPrivilegeInput.set($event)" placeholder="_stock_view"></div>
           <button class="btn primary" style="margin-bottom:12px" [disabled]="checking()" (click)="runCheck()">{{ checking() ? 'Checking…' : 'Check' }}</button>
         </div>
-        @if (checkResult()) {
-          <span class="pill" [class.ok]="checkResult() === 'Granted'" [class.err]="checkResult() !== 'Granted'">{{ checkResult() }}</span>
+        @if (checkRan()) {
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <span class="pill" [class.ok]="checkClient() === true" [class.err]="checkClient() === false" title="Client-local roles on this database — what /roles/my-privileges returns">
+              This database: {{ checkClient() === null ? 'unknown' : checkClient() ? 'Granted' : 'Not granted' }}
+            </span>
+            <span class="pill" [class.ok]="checkPlatform() === true" [class.err]="checkPlatform() === false" title="The platform (Auth API) role — the other half of dual-check">
+              Platform: {{ checkPlatform() === null ? 'unknown' : checkPlatform() ? 'Granted' : 'Not granted' }}
+            </span>
+            @if (checkClient() === true && checkPlatform() === false) {
+              <span style="font-size:11.5px;color:var(--gc-text-muted)">On your role here, but not on the platform role — the API will refuse it until the platform role is seeded.</span>
+            } @else if (checkClient() === false && checkPlatform() === true) {
+              <span style="font-size:11.5px;color:var(--gc-text-muted)">On the platform role, but not on any of your roles here — add it to a role in this database.</span>
+            }
+          </div>
         }
       </div>
     }
@@ -602,9 +611,11 @@
   </div>
 }
 
-<!-- Role privileges: a real two-way editor. Current state comes from
-     `_check_role_privileges` for THIS database, so the ticks mean something;
-     Save applies only the difference. -->
+<!-- Role privileges: a real two-way editor over the client-local role.
+     The ticks are what /roles/privileges/list reports for THIS role; Save
+     applies only the difference. A "platform" pill marks a privilege the
+     Auth API's role of the same name doesn't carry — under dual-check the
+     API refuses it until the platform role is seeded. -->
 @if (privRoleTarget(); as role) {
   <div class="scrim on" role="dialog" aria-modal="true" aria-label="Role privileges">
     <div class="modal" style="width:680px;max-width:calc(100vw - 32px)">
@@ -631,15 +642,20 @@
               <label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;font-size:12.5px">
                 <input type="checkbox" [checked]="privDraft().has(name)" (change)="togglePrivilege(name)">
                 <span style="font-family:monospace">{{ name }}</span>
-                @if (privLinked().has(name) && !privDraft().has(name)) {
-                  <span class="pill err" style="margin-left:auto;font-size:10px">removing</span>
-                } @else if (!privLinked().has(name) && privDraft().has(name)) {
-                  <span class="pill ok" style="margin-left:auto;font-size:10px">adding</span>
-                }
+                <span style="margin-left:auto;display:flex;gap:6px">
+                  @if (privPlatform() && privDraft().has(name) && !privPlatform()!.has(name)) {
+                    <span class="pill warn" style="font-size:10px" title="Not on the platform (Auth API) role of this name — under dual-check the API refuses it until the platform role is seeded">platform ✕</span>
+                  }
+                  @if (privLinked().has(name) && !privDraft().has(name)) {
+                    <span class="pill err" style="font-size:10px">removing</span>
+                  } @else if (!privLinked().has(name) && privDraft().has(name)) {
+                    <span class="pill ok" style="font-size:10px">adding</span>
+                  }
+                </span>
               </label>
             } @empty {
               <p style="color:var(--gc-text-muted);font-size:12.5px;padding:8px 2px;margin:0">
-                {{ privileges().length === 0 ? 'No privileges came back from the auth API for this utility.' : 'No privileges match that filter.' }}
+                {{ privileges().length === 0 ? 'This database has no privilege catalogue yet — it has not been seeded.' : 'No privileges match that filter.' }}
               </p>
             }
           </div>
@@ -648,6 +664,16 @@
             <div style="font-size:11.5px;color:var(--gc-text-muted);margin-top:8px">
               Pending: {{ privToAdd().length }} to add, {{ privToRemove().length }} to remove.
             </div>
+          }
+          @if (privPlatform() === null) {
+            <div style="font-size:11.5px;color:var(--gc-text-muted);margin-top:8px">
+              The platform role could not be read — can't tell which of these the API will honour under dual-check.
+            </div>
+          } @else if (privWaitingOnPlatform().length) {
+            <div class="hiernote warn" style="margin-top:8px"><span class="i">!</span><span>
+              {{ privWaitingOnPlatform().length }} ticked here but not on the platform <strong>{{ role.role_name }}</strong> role
+              — they'll show as granted here and still be refused by the API until the platform role is seeded with them.
+            </span></div>
           }
         }
       </div>

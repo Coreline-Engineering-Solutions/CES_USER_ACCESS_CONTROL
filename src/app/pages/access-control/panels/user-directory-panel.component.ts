@@ -5,7 +5,6 @@ import { StockAccessApiService } from '../../../services/stock-access-api.servic
 import { GisAccessApiService } from '../../../services/gis-access-api.service';
 import { ModulesAccessApiService } from '../../../services/modules-access-api.service';
 import { ClientRolesService } from '../../../services/client-roles.service';
-import { UserUtilitiesService } from '../../../services/user-utilities.service';
 import { SessionService } from '../../../session/session.service';
 import { OrgRow, StockLocation } from '../../../services/stock-access.types';
 import { ModuleAccessEntry, ModuleSummary } from '../../../services/modules-access.types';
@@ -71,7 +70,6 @@ export class UserDirectoryPanelComponent implements OnInit {
   private readonly gisAccess = inject(GisAccessApiService);
   private readonly modulesAccess = inject(ModulesAccessApiService);
   private readonly clientRoles = inject(ClientRolesService);
-  private readonly userUtils = inject(UserUtilitiesService);
   readonly session = inject(SessionService);
 
   readonly loading = signal(true);
@@ -175,18 +173,16 @@ export class UserDirectoryPanelComponent implements OnInit {
       const users = this.dbUsers.users();
       const usersByGid = new Map(users.map((u) => [u.user_gid, u]));
 
-      // Roles from the AUTH API (the enforced ones), keyed by email - see
-      // ClientRolesService. The client-local list this read before showed
-      // roles that gated nothing.
-      const utilities = Array.from(new Set(['GIS System', ...this.userUtils.available()]));
+      // Roles from the client-local store on this database — what every
+      // gate reads (ClientRolesService). Assignments carry user_gid.
       const [locRes, grantRes, orgRes, modulesRes, roleList] = await Promise.all([
         this.stockAccess.locationsList(),
         this.stockAccess.locationAccessList(),
         this.stockAccess.orgsList(),
         this.modulesAccess.moduleList(),
-        this.clientRoles.listRoles(utilities),
+        this.clientRoles.listRoles(),
       ]);
-      const roleAssignments = await this.clientRoles.listAssignments(roleList);
+      const roleAssignments = await this.clientRoles.listAssignments();
       this.locations.set(locRes?.locations ?? []);
       this.orgs.set(orgRes?.orgs ?? []);
       // /modules/list returns rows keyed by `global_id` (and `data`, not
@@ -254,10 +250,12 @@ export class UserDirectoryPanelComponent implements OnInit {
         }
       }
 
-      // Roles — email-keyed from the auth API; matched to db-linked users by email.
+      // Roles — /roles/users/list carries user_gid; match on that first,
+      // and by email for any row that happens to carry one.
       const usersByEmail = new Map(users.map((u) => [String(u.email ?? '').toLowerCase(), u]));
       for (const a of roleAssignments) {
-        const u = usersByEmail.get(String(a.user_email ?? a.user_gid ?? '').toLowerCase());
+        const u = usersByGid.get(String(a.user_gid ?? ''))
+          ?? (a.user_email ? usersByEmail.get(String(a.user_email).toLowerCase()) : undefined);
         if (!u) continue;
         ensure(u.email, u.user_gid).grants.push({
           system: 'roles',
@@ -319,9 +317,9 @@ export class UserDirectoryPanelComponent implements OnInit {
           await this.modulesAccess.accessRevoke(grant.refId, email);
           break;
         case 'roles': {
-          const { utility, role } = ClientRolesService.parseRoleKey(grant.refId);
-          if (!(await this.clientRoles.removeUserRole(email, role, utility))) {
-            throw new Error('The auth API did not confirm the revoke.');
+          // refId is the client-local role_gid (see the roles grant mapping).
+          if (!(await this.clientRoles.removeUserRole(email, grant.refId))) {
+            throw new Error('The API did not confirm the revoke.');
           }
           break;
         }

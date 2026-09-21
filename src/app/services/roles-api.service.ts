@@ -80,6 +80,14 @@ export class RolesApiService {
     return this.post<{ response: string; privileges: ClientPrivilege[] }>('/roles/privileges/list', {});
   }
 
+  /** Same endpoint filtered to one role (API 91ce046, 16 Sep). The server
+   *  echoes `role_gid` when it applied the filter; an older build ignores
+   *  the field and returns the whole catalogue with no echo — callers must
+   *  check for the echo before treating the answer as role-scoped. */
+  privilegesListForRole(role_gid: string) {
+    return this.post<{ response: string; role_gid?: string; privileges: ClientPrivilege[] }>('/roles/privileges/list', { role_gid });
+  }
+
   // privilegeCreate() REMOVED 3 Sep — privileges are defined by the backend
   // and pulled through as a fixed list; UAC only ever LINKS existing ones to
   // a role (privilegeAssign/privilegeRevoke below). Creating new privilege

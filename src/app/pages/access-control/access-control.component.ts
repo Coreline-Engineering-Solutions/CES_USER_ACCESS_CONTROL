@@ -5,7 +5,7 @@ import { SessionService } from '../../session/session.service';
 import { DbUsersService } from '../../services/db-users.service';
 import { AdminUsersService, NewUserDraft } from '../../services/admin-users.service';
 import { ClientRolesService } from '../../services/client-roles.service';
-import { RolesApiService } from '../../services/roles-api.service';
+import { PlatformRolesService } from '../../services/platform-roles.service';
 import {
   NEVER_SEED,
   STANDARD_ROLE_BUNDLES,
@@ -66,9 +66,12 @@ export class AccessControlComponent implements OnInit {
   readonly session = inject(SessionService);
   readonly dbUsers = inject(DbUsersService); // template reads dbUsers.users() for email dropdowns
   private readonly adminUsers = inject(AdminUsersService);
+  /** Client-local `/roles/*` on the GIS API — the store every gate reads.
+   *  THE management surface of this tab. */
   private readonly clientRoles = inject(ClientRolesService);
-  /** Client-local `/roles/*` on the GIS API - the second store under dual-check. */
-  private readonly rolesApi = inject(RolesApiService);
+  /** The central Auth API's role model, READ-ONLY here — the platform
+   *  ceiling under dual-check. See PlatformRolesService for why no writes. */
+  private readonly platformRoles = inject(PlatformRolesService);
 
   readonly activeTab = signal<Tab>('users');
   readonly loading = signal(true);
@@ -132,10 +135,8 @@ export class AccessControlComponent implements OnInit {
 
   // ─── Client roles/privileges ────────────────────────────────────────────
   readonly roles = signal<ClientRole[]>([]);
-  /** Privilege NAMES from the auth API's `_available_privileges` (the
-   *  catalogue AC has always used). The GIS `/roles/privileges/list`
-   *  surface this used to read was not pulling anything through and was
-   *  not db-specific - see ClientRolesService for why this moved. */
+  /** Privilege NAMES from this database's client-local catalogue
+   *  (`/roles/privileges/list`) — the set a role on this database can carry. */
   readonly privileges = signal<string[]>([]);
   readonly privilegesError = signal<string | null>(null);
 
@@ -196,8 +197,10 @@ export class AccessControlComponent implements OnInit {
   // --- Standard roles per database ---------------------------------------
   //
   // "Set up standard roles": Viewer / Planner / Manager from
-  // CES_ROLE_SEED_SPEC.md, linked into the AUTH API's role model for this
-  // database. Roughly 300 writes against a client's live access control, so
+  // CES_ROLE_SEED_SPEC.md, created and linked in THIS database's client-local
+  // tables (tiaan, a4a98cdc #5: the seed is frontend config over the
+  // existing /roles/* CRUD). Roughly 300 writes against a client's live
+  // access control, so
   // the flow is deliberately slow: preview -> type the db name -> apply
   // with progress. Additive only. Never removes a privilege, never touches
   // a role that already has privileges unless the operator opts that role
@@ -265,7 +268,7 @@ export class AccessControlComponent implements OnInit {
     try {
       const [catalogue, dbName] = await Promise.all([
         this.clientRoles.availablePrivileges(STANDARD_ROLE_UTILITY),
-        this.clientRoles.activeDbName(),
+        this.platformRoles.activeDbName(),
       ]);
       this.seedDbName.set(dbName);
       if (catalogue.length === 0) {
@@ -287,7 +290,7 @@ export class AccessControlComponent implements OnInit {
         const role = existing.get(bundle.role.toLowerCase());
         let current: string[] = [];
         if (role) {
-          current = await this.clientRoles.rolePrivileges(role.role_name, role.utility_name);
+          current = await this.clientRoles.rolePrivileges(role);
         }
         const currentSet = new Set(current);
         const toLink = linkable.filter((p) => !currentSet.has(p));
@@ -343,14 +346,25 @@ export class AccessControlComponent implements OnInit {
       for (const b of rows) {
         patch(b.role, (r) => ({ ...r, state: 'running' }));
 
+        // Resolve the role object every link call needs — created now, or
+        // already there. findRole refuses a duplicated name, which is the
+        // one case a blind link would land on the wrong row.
+        let roleObj: ClientRole | null = null;
         if (b.state === 'create') {
           try {
-            await this.clientRoles.createRole(b.role, STANDARD_ROLE_UTILITY);
+            roleObj = await this.clientRoles.createRole(b.role, STANDARD_ROLE_UTILITY);
           } catch (err: any) {
             patch(b.role, (r) => ({ ...r, state: 'failed', failed: [`create role: ${err?.message ?? 'failed'}`] }));
             continue;
           }
+        } else {
+          roleObj = this.clientRoles.findRole(b.role, STANDARD_ROLE_UTILITY);
+          if (!roleObj) {
+            patch(b.role, (r) => ({ ...r, state: 'failed', failed: [`"${b.role}" is missing or duplicated on this database — fix the duplicate first`] }));
+            continue;
+          }
         }
+        const target = roleObj;
 
         // Belt and braces: the bundles already exclude these, but this is
         // the one place a mistake would grant the role-admin gate itself.
@@ -363,7 +377,7 @@ export class AccessControlComponent implements OnInit {
             const priv = queue[i++];
             let ok = false;
             try {
-              ok = await this.clientRoles.assignPrivilege(b.role, priv, STANDARD_ROLE_UTILITY);
+              ok = await this.clientRoles.assignPrivilege(target, priv);
             } catch {
               ok = false;
             }
@@ -416,14 +430,30 @@ export class AccessControlComponent implements OnInit {
   }
 
   // --- Per-role privilege editor -----------------------------------------
-  // A real two-way editor now: `_check_role_privileges` returns what is
-  // actually on the role for THIS database, so the checkboxes reflect real
+  // A real two-way editor: `/roles/privileges/list {role_gid}` returns what
+  // is actually on this client-local role, so the checkboxes reflect real
   // state and Save applies the difference (assign what was ticked, remove
-  // what was unticked). The earlier blind tick-then-Link/Unlink panel only
-  // existed because the GIS /roles/* surface had no per-role read.
+  // what was unticked).
+  //
+  // The PLATFORM ceiling: while `USE_CLIENT_PERMISSIONS` runs in dual-check,
+  // the API allows a privilege only if it is on the client-local role AND
+  // on the Auth API's platform role of the same name. The editor reads the
+  // platform role (read-only) so a privilege ticked here that the platform
+  // role does not carry is labelled "waiting on platform role" instead of
+  // looking like a bug when it still 403s. `null` = the platform side could
+  // not be read; the label is then withheld rather than guessed.
   readonly privRoleTarget = signal<ClientRole | null>(null);
   readonly privLinked = signal<Set<string>>(new Set());   // as loaded from the server
   readonly privDraft = signal<Set<string>>(new Set());    // as edited here
+  readonly privPlatform = signal<Set<string> | null>(null);
+
+  /** Draft privileges the platform role does NOT carry — will not work
+   *  until the platform role is seeded/updated. Empty when unknown. */
+  readonly privWaitingOnPlatform = computed<string[]>(() => {
+    const plat = this.privPlatform();
+    if (!plat) return [];
+    return Array.from(this.privDraft()).filter((n) => !plat.has(n)).sort();
+  });
   readonly privSearch = signal('');
   readonly privLoading = signal(false);
   readonly privBusy = signal(false);
@@ -457,14 +487,19 @@ export class AccessControlComponent implements OnInit {
     this.privError.set(null);
     this.privLinked.set(new Set());
     this.privDraft.set(new Set());
+    this.privPlatform.set(null);
     this.privLoading.set(true);
     try {
-      const linked = await this.clientRoles.rolePrivileges(role.role_name, role.utility_name || 'GIS System');
+      const [linked, platform] = await Promise.all([
+        this.clientRoles.rolePrivileges(role),
+        this.platformRoles.rolePrivileges(role.role_name, role.utility_name || 'GIS System'),
+      ]);
       this.privLinked.set(new Set(linked));
       this.privDraft.set(new Set(linked));
+      this.privPlatform.set(platform);
     } catch (err: any) {
       console.error('[AccessControl] role privileges load failed:', err);
-      this.privError.set('Could not load this role\'s current privileges.');
+      this.privError.set(err?.message ?? 'Could not load this role\'s current privileges.');
     } finally {
       this.privLoading.set(false);
     }
@@ -499,7 +534,6 @@ export class AccessControlComponent implements OnInit {
     const remove = this.privToRemove();
     if (add.length === 0 && remove.length === 0) return;
 
-    const utility = role.utility_name || 'GIS System';
     this.privBusy.set(true);
     this.privError.set(null);
     this.privResult.set(null);
@@ -509,13 +543,13 @@ export class AccessControlComponent implements OnInit {
 
     for (const name of add) {
       try {
-        if (await this.clientRoles.assignPrivilege(role.role_name, name, utility)) added++;
+        if (await this.clientRoles.assignPrivilege(role, name)) added++;
         else failed.push(name);
       } catch { failed.push(name); }
     }
     for (const name of remove) {
       try {
-        if (await this.clientRoles.removePrivilege(role.role_name, name, utility)) removed++;
+        if (await this.clientRoles.removePrivilege(role, name)) removed++;
         else failed.push(name);
       } catch { failed.push(name); }
     }
@@ -523,7 +557,7 @@ export class AccessControlComponent implements OnInit {
     // Re-read rather than assuming - the server is the truth about what
     // actually stuck, especially after a partial failure.
     try {
-      const linked = await this.clientRoles.rolePrivileges(role.role_name, utility);
+      const linked = await this.clientRoles.rolePrivileges(role);
       this.privLinked.set(new Set(linked));
       this.privDraft.set(new Set(linked));
     } catch { /* leave the draft as-is; the message below still applies */ }
@@ -616,13 +650,11 @@ export class AccessControlComponent implements OnInit {
       if (roleGid) {
         try {
           const target = this.roles().find((r) => r.role_gid === roleGid);
-          const { utility, role } = target
-            ? { utility: target.utility_name, role: target.role_name }
-            : ClientRolesService.parseRoleKey(roleGid);
-          if (!(await this.clientRoles.assignUserRole(email, role, utility))) {
-            throw new Error('The auth API did not confirm the role assignment.');
+          if (!target) throw new Error('That role is no longer on this database.');
+          if (!(await this.clientRoles.assignUserRole(email, target))) {
+            throw new Error('The API did not confirm the role assignment.');
           }
-          step(`Assigned ${role}.`);
+          step(`Assigned ${target.role_name}.`);
         } catch (err: any) {
           this.createUserError.set(
             `User created and linked, but the role could not be assigned: ${err?.response?.data?.detail ?? err?.message ?? 'unknown error'}`,
@@ -791,21 +823,28 @@ export class AccessControlComponent implements OnInit {
     return this.toolsetBusy() === `${email}::${utility}`;
   }
 
+  /** Assignment -> the db-user it belongs to. `/roles/users/list` carries
+   *  user_gid (no email); the db-users directory has both, so match on gid
+   *  first and fall back to email for rows that do carry one. */
+  private assignmentKeys(a: UserRoleAssignment): string[] {
+    return [a.user_gid, a.user_email].map((v) => String(v ?? '').trim().toLowerCase()).filter(Boolean);
+  }
+
   readonly userRows = computed(() => {
-    // Assignments from the auth API are keyed by EMAIL (user_gid carries
-    // it) - which is also the one field every user source here agrees on.
-    const rolesByEmail = new Map<string, UserRoleAssignment[]>();
+    const byKey = new Map<string, UserRoleAssignment[]>();
     for (const a of this.assignments()) {
-      const key = String(a.user_email ?? a.user_gid ?? '').toLowerCase();
-      const list = rolesByEmail.get(key) ?? [];
-      list.push(a);
-      rolesByEmail.set(key, list);
+      for (const k of this.assignmentKeys(a)) {
+        const list = byKey.get(k) ?? [];
+        if (!list.includes(a)) list.push(a);
+        byKey.set(k, list);
+      }
     }
-    return this.dbUsers.users().map((u) => ({
-      email: u.email,
-      user_gid: u.user_gid,
-      roles: rolesByEmail.get(String(u.email ?? '').toLowerCase()) ?? [],
-    }));
+    return this.dbUsers.users().map((u) => {
+      const gid = String(u.user_gid ?? '').toLowerCase();
+      const email = String(u.email ?? '').toLowerCase();
+      const seen = new Set<UserRoleAssignment>([...(byKey.get(gid) ?? []), ...(byKey.get(email) ?? [])]);
+      return { email: u.email, user_gid: u.user_gid, roles: Array.from(seen) };
+    });
   });
 
   /** Assignments whose user_gid matches nobody linked to this db - surfaced
@@ -813,8 +852,11 @@ export class AccessControlComponent implements OnInit {
    *  no longer on the database is exactly what an access review needs to
    *  see. */
   readonly orphanAssignments = computed<UserRoleAssignment[]>(() => {
-    const known = new Set(this.dbUsers.users().map((u) => String(u.email ?? '').toLowerCase()));
-    return this.assignments().filter((a) => !known.has(String(a.user_email ?? a.user_gid ?? '').toLowerCase()));
+    const known = new Set<string>();
+    for (const u of this.dbUsers.users()) {
+      for (const v of [u.user_gid, u.email]) if (v) known.add(String(v).toLowerCase());
+    }
+    return this.assignments().filter((a) => !this.assignmentKeys(a).some((k) => known.has(k)));
   });
 
   /** Revoke straight from a user row - the email is already known here, so
@@ -825,9 +867,8 @@ export class AccessControlComponent implements OnInit {
   async revokeRoleFromUser(email: string, a: UserRoleAssignment): Promise<void> {
     this.rowRevoking.set(email + '::' + a.role_gid);
     try {
-      const utility = a.utility_name || ClientRolesService.parseRoleKey(a.role_gid).utility;
-      if (!(await this.clientRoles.removeUserRole(email, a.role_name, utility))) {
-        throw new Error('The auth API did not confirm the revoke.');
+      if (!(await this.clientRoles.removeUserRole(email, a.role_gid))) {
+        throw new Error('The API did not confirm the revoke.');
       }
       await this.load();
     } catch (err: any) {
@@ -847,50 +888,12 @@ export class AccessControlComponent implements OnInit {
     this.assignEmail.set(email);
     this.assignRoleGid.set('');
     this.assignError.set(null);
-    this.assignMirrorNote.set(null);
     this.assignModalOpen.set(true);
   }
 
   readonly assignModalOpen = signal(false);
   closeAssignModal(): void {
     this.assignModalOpen.set(false);
-  }
-
-  /**
-   * What happened on the client-local side of the last assign / revoke -
-   * shown so an operator can tell the two stores apart while dual-check is on.
-   */
-  readonly assignMirrorNote = signal<string | null>(null);
-
-  /**
-   * Dual-check (16 Sep): with `USE_CLIENT_PERMISSIONS` on, the GIS API
-   * requires the privilege in BOTH the Auth API role AND a client-local
-   * role (`admin.client_user_roles` on the active DB). A user with only the
-   * Auth role gets 403 on everything - what michael's mobile user hit on QA.
-   * So every assign / revoke here also writes the client-local store, matched
-   * by role NAME (the two stores share Manager / Planner / Viewer). Best
-   * effort: a missing or ambiguous client-local role is reported, not fatal -
-   * the Auth write is the one that has always mattered and still does.
-   */
-  private async mirrorUserRole(action: 'assign' | 'revoke', email: string, roleName: string): Promise<string> {
-    try {
-      const res = await this.rolesApi.rolesList();
-      const rows = (Array.isArray(res) ? res : (res as any)?.roles) ?? [];
-      const hits = rows.filter((r: any) => String(r?.role_name ?? '').trim().toLowerCase() === roleName.trim().toLowerCase());
-      if (hits.length === 0) return `Client-local: no "${roleName}" role on this database - not ${action === 'assign' ? 'assigned' : 'revoked'} there. Seed the standard roles first.`;
-      if (hits.length > 1) return `Client-local: "${roleName}" exists ${hits.length} times on this database (duplicate roles) - skipped. Tiaan is cleaning these up.`;
-      const payload = { user_email: email, role_gid: String(hits[0].role_gid) };
-      const out: any = action === 'assign'
-        ? await this.rolesApi.userRoleAssign(payload)
-        : await this.rolesApi.userRoleRevoke(payload);
-      const ok = out?.response === '_S' || out?.success === true || out === true;
-      return ok
-        ? `Client-local: ${action === 'assign' ? 'assigned' : 'revoked'} too.`
-        : `Client-local: the API did not confirm the ${action} (${JSON.stringify(out?.response ?? out)}).`;
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail ?? err?.message ?? String(err);
-      return `Client-local: ${action} failed - ${typeof detail === 'string' ? detail : JSON.stringify(detail)}.`;
-    }
   }
 
   // ─── User-role assignments ──────────────────────────────────────────────
@@ -901,14 +904,19 @@ export class AccessControlComponent implements OnInit {
   readonly assignError = signal<string | null>(null);
 
   readonly checkPrivilegeInput = signal('');
-  readonly checkResult = signal<string | null>(null);
+  /** Both halves of dual-check, for the signed-in user. `null` = not run /
+   *  could not be determined. The API allows the call only when both are
+   *  true — showing them apart says WHICH store is saying no. */
+  readonly checkClient = signal<boolean | null>(null);
+  readonly checkPlatform = signal<boolean | null>(null);
+  readonly checkRan = signal(false);
   readonly checking = signal(false);
 
   /**
    * /roles/users/list returns user_gid (no email); /roles/users/revoke
-   * requires user_email. There's no gid→email lookup in this API surface,
-   * so revoke needs the admin to re-enter the email rather than silently
-   * sending an empty one.
+   * requires user_email. For an assignment whose user is not in the
+   * db-users directory (an orphan) there is no email to hand, so revoke
+   * asks the admin to enter it rather than silently sending an empty one.
    */
   readonly revokeAssignmentTarget = signal<UserRoleAssignment | null>(null);
   readonly revokeAssignmentEmail = signal('');
@@ -939,21 +947,18 @@ export class AccessControlComponent implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     try {
-      // Roles and assignments come from the AUTH API - the system every
-      // endpoint actually enforces. The client-local /roles/* list this used
-      // to read showed roles that gated nothing (see ClientRolesService).
-      // Roles are per utility; ask for each utility this user holds, plus
-      // GIS System always, since that is where every privilege lives.
-      const utilities = Array.from(new Set(['GIS System', ...this.userUtils.available()]));
+      // Everything here is the client-local store on the session's active
+      // database — the one /roles/my-privileges and every gate read. One
+      // list each; the server scopes by session, nothing here names a db.
       const [roles, privNames] = await Promise.all([
-        this.clientRoles.listRoles(utilities),
-        this.clientRoles.availablePrivileges('GIS System').catch((err) => {
+        this.clientRoles.listRoles(),
+        this.clientRoles.availablePrivileges().catch((err) => {
           console.error('[AccessControl] privilege catalogue failed:', err);
-          this.privilegesError.set('Could not load the privilege list from the auth API.');
+          this.privilegesError.set('Could not load this database\'s privilege catalogue.');
           return [] as string[];
         }),
       ]);
-      const assignments = await this.clientRoles.listAssignments(roles);
+      const assignments = await this.clientRoles.listAssignments();
       this.roles.set(roles);
       this.privileges.set(privNames);
       this.assignments.set(assignments);
@@ -987,18 +992,32 @@ export class AccessControlComponent implements OnInit {
     }
   }
 
-  /**
-   * Deleting a role has no Auth-API function yet. The old path deleted the
-   * client-local row, which removed it from this list while the enforced
-   * role (and everyone holding it) stayed exactly as it was - a delete that
-   * looked done and was not. Better to say so than pretend. Revoke the
-   * role's privileges and users instead; ask backend for `/role/delete`.
-   */
+  readonly deletingRoleGid = signal('');
+
+  /** `/roles/delete` cascades the role's privilege links and user
+   *  assignments on this database. Confirmed by name because there is no
+   *  undo, and the row IS what the gates read now. */
   async deleteRole(role: ClientRole): Promise<void> {
-    this.error.set(
-      `Removing "${role.role_name}" is not supported by the auth API yet. Clear its privileges and revoke it from users instead - ` +
-      `that is what actually changes access. (Backend: a /role/delete route is needed.)`,
-    );
+    if (role.is_system) {
+      this.error.set(`"${role.role_name}" is a system role and cannot be deleted here.`);
+      return;
+    }
+    const holders = this.assignments().filter((a) => a.role_gid === role.role_gid).length;
+    const msg = holders
+      ? `Delete "${role.role_name}"? ${holders} user${holders === 1 ? '' : 's'} hold it — they lose every privilege it grants, immediately.`
+      : `Delete "${role.role_name}"? Its privilege links go with it.`;
+    if (!window.confirm(msg)) return;
+    this.deletingRoleGid.set(role.role_gid);
+    this.error.set(null);
+    try {
+      if (!(await this.clientRoles.deleteRole(role))) throw new Error('The API did not confirm the delete.');
+      await this.load();
+    } catch (err: any) {
+      console.error('[AccessControl] role delete failed:', err);
+      this.error.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to delete role');
+    } finally {
+      this.deletingRoleGid.set('');
+    }
   }
 
 
@@ -1015,13 +1034,10 @@ export class AccessControlComponent implements OnInit {
     this.assignError.set(null);
     try {
       const target = this.roles().find((r) => r.role_gid === this.assignRoleGid());
-      const { utility, role } = target
-        ? { utility: target.utility_name, role: target.role_name }
-        : ClientRolesService.parseRoleKey(this.assignRoleGid());
-      if (!(await this.clientRoles.assignUserRole(email, role, utility))) {
-        throw new Error('The auth API did not confirm the role assignment.');
+      if (!target) throw new Error('That role is no longer on this database.');
+      if (!(await this.clientRoles.assignUserRole(email, target))) {
+        throw new Error('The API did not confirm the role assignment.');
       }
-      this.assignMirrorNote.set(await this.mirrorUserRole('assign', email, role));
       this.assignEmail.set('');
       this.assignModalOpen.set(false);
       await this.load();
@@ -1054,11 +1070,9 @@ export class AccessControlComponent implements OnInit {
     this.revokingAssignment.set(true);
     this.revokeAssignmentError.set(null);
     try {
-      const utility = a.utility_name || ClientRolesService.parseRoleKey(a.role_gid).utility;
-      if (!(await this.clientRoles.removeUserRole(email, a.role_name, utility))) {
-        throw new Error('The auth API did not confirm the revoke.');
+      if (!(await this.clientRoles.removeUserRole(email, a.role_gid))) {
+        throw new Error('The API did not confirm the revoke.');
       }
-      this.assignMirrorNote.set(await this.mirrorUserRole('revoke', email, a.role_name));
       this.revokeAssignmentTarget.set(null);
       await this.load();
     } catch (err: any) {
@@ -1073,16 +1087,20 @@ export class AccessControlComponent implements OnInit {
     const priv = this.checkPrivilegeInput().trim();
     if (!priv) return;
     this.checking.set(true);
-    this.checkResult.set(null);
+    this.checkClient.set(null);
+    this.checkPlatform.set(null);
+    this.checkRan.set(false);
     try {
-      // _check_function_permission on the auth API - the exact call every
-      // protected endpoint makes. The client-local /roles/check-permission
-      // this used to hit answers from tables nothing enforces.
-      const granted = await this.clientRoles.checkFunctionPermission(priv, 'GIS System');
-      this.checkResult.set(granted ? 'Granted' : 'Not granted');
+      const [client, platform] = await Promise.all([
+        this.clientRoles.checkClientPermission(priv).catch(() => null),
+        this.platformRoles.checkFunctionPermission(priv, 'GIS System').catch(() => null),
+      ]);
+      this.checkClient.set(client);
+      this.checkPlatform.set(platform);
+      this.checkRan.set(true);
     } catch (err: any) {
       console.error('[AccessControl] permission check failed:', err);
-      this.checkResult.set('Check failed');
+      this.checkRan.set(true);
     } finally {
       this.checking.set(false);
     }

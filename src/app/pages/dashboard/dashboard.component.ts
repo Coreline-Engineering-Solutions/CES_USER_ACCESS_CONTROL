@@ -2,7 +2,6 @@ import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { StockAccessApiService } from '../../services/stock-access-api.service';
 import { ClientRolesService } from '../../services/client-roles.service';
-import { UserUtilitiesService } from '../../services/user-utilities.service';
 import { SessionService } from '../../session/session.service';
 import { AccessRole, LocationAccessGrant, StockLocation } from '../../services/stock-access.types';
 import { ClientPrivilege, ClientRole, UserRoleAssignment } from '../../services/roles.types';
@@ -26,7 +25,6 @@ const ALL_ROLES: AccessRole[] = ['viewer', 'operator', 'receiver', 'custodian', 
 export class DashboardComponent implements OnInit {
   private readonly stockAccess = inject(StockAccessApiService);
   private readonly clientRoles = inject(ClientRolesService);
-  private readonly userUtils = inject(UserUtilitiesService);
   readonly session = inject(SessionService);
 
   readonly loading = signal(true);
@@ -83,16 +81,15 @@ export class DashboardComponent implements OnInit {
     this.error.set(null);
     try {
       // Independent calls — one slow endpoint shouldn't serialise the rest.
-      // Roles / privileges / assignments are counted from the AUTH API -
-      // the system endpoints enforce - not the client-local /roles/* tables.
-      const utilities = Array.from(new Set(['GIS System', ...this.userUtils.available()]));
+      // Roles / privileges / assignments are the client-local store on the
+      // active database — what /roles/my-privileges and every gate read.
       const [locRes, grantRes, roleList, privNames] = await Promise.all([
         this.stockAccess.locationsList(),
         this.stockAccess.locationAccessList(),
-        this.clientRoles.listRoles(utilities),
-        this.clientRoles.availablePrivileges('GIS System').catch(() => [] as string[]),
+        this.clientRoles.listRoles(),
+        this.clientRoles.availablePrivileges().catch(() => [] as string[]),
       ]);
-      const assignments = await this.clientRoles.listAssignments(roleList);
+      const assignments = await this.clientRoles.listAssignments();
       this.locations.set(locRes?.locations ?? []);
       this.grants.set(grantRes?.access ?? []);
       this.roles.set(roleList);

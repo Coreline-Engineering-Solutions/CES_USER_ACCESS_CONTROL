@@ -1,346 +1,243 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { SessionService } from '../session/session.service';
-import { ClientRole, UserRoleAssignment } from './roles.types';
+import { RolesApiService } from './roles-api.service';
+import { ClientPrivilege, ClientRole, UserRoleAssignment } from './roles.types';
 
 /**
- * Role/privilege management against the CENTRAL auth API, scoped to a
- * database by name.
+ * CLIENT-LOCAL role management — the GIS API `/roles/*` surface, backed by
+ * `admin.client_roles / client_privileges / client_role_privileges /
+ * client_user_roles` in the client's OWN database.
  *
- * Why this exists next to RolesApiService: the GIS API's `/roles/*` surface
- * (RolesApiService) is client-local and, in practice, was not pulling the
- * privilege catalogue through at all, and what it does return is not
- * db-specific. AC has always used these auth-API functions instead, and
- * they take a `db_name` - which is what actually makes a role's privilege
- * set per-database. Ported here so UAC and AC read and write the SAME
- * privilege data rather than two disagreeing views of it.
+ * This is the store `/roles/my-privileges` reads and every privilege gate
+ * in every CES app resolves against. It is the Client Portal's management
+ * surface for the access-control cutover (thread 8ba7fa15; tiaan, 16 Sep:
+ * "the Client Portal becomes the management surface for client-local roles,
+ * and the Auth API role section on the Users page stays as the
+ * bootstrap-only surface").
  *
- * Every call passes the ACTIVE database's name. A client admin therefore
- * only ever reads or edits their own company's role privileges.
+ * Every client database has its OWN Manager / Planner / Viewer rows with
+ * their OWN privilege links, so two clients' "Manager" roles can differ —
+ * that is the point. Roles and privileges are addressed by gid, never by
+ * name (tiaan: Fibretime and frogfoot carry duplicate role names today).
  *
- * 11 Sep: this became the WHOLE role surface, not just the privilege editor.
- * Backend confirmed that every protected endpoint checks the Auth API's
- * roles (`check_function_permission` -> Auth API) and that nothing reads
- * the client-local `admin.client_*` tables the GIS `/roles/*` surface
- * writes. So roles listed, created, and assigned to users through
- * RolesApiService existed in UAC's UI and changed nobody's access. The
- * role list, role creation and user<->role assignment now go through here
- * too, mirroring what CES_ACCESS_CONTROL has always done. RolesApiService
- * is kept only for what has no Auth-API equivalent yet.
+ * Scoping is structural: the server resolves the client database from the
+ * session, and no call here carries a db_gid. There is no way to read or
+ * write another client's roles through this service with a valid session.
  *
- * Roles here have no gid - the Auth API keys them by (utility, name) per
- * database. `ClientRole.role_gid` is synthesised as `utility::name` so the
- * component and templates that track by gid keep working unchanged.
+ * This service was the AUTH-API-backed one until 21 Sep (a deliberate
+ * 11 Sep decision, correct when the backend enforced only Auth roles). With
+ * `USE_CLIENT_PERMISSIONS` on, the two stores diverged: edits here changed
+ * the Auth role while the gates read client-local. The Auth-API READ side
+ * now lives in `PlatformRolesService`; its writes were removed on purpose.
  */
 @Injectable({ providedIn: 'root' })
 export class ClientRolesService {
-  private readonly session = inject(SessionService);
-  private readonly AUTH_API = 'https://auth-api-frankfurt.onrender.com/auth';
+  private readonly api = inject(RolesApiService);
 
   readonly loading = signal(false);
 
-  private get sessionGid(): string {
-    return this.session.session()?.session_gid ?? this.session.readCookie('session_gid') ?? '';
-  }
-
-  private async call(body: Record<string, any>): Promise<any> {
-    const res = await fetch(this.AUTH_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_gid: this.sessionGid, ...body }),
-    });
-    return res.json();
-  }
+  /** Last-loaded role list, so callers that only hold a gid can resolve
+   *  name/utility without another round trip. */
+  private roleCache: ClientRole[] = [];
+  /** Privilege catalogue, name <-> gid. The `/roles/privileges/assign|revoke`
+   *  calls take gids; the UI (and the standard-role bundles) speak names. */
+  private privByName = new Map<string, ClientPrivilege>();
+  private privByGid = new Map<string, ClientPrivilege>();
 
   private ok(data: any): boolean {
-    if (typeof data === 'string') return data.startsWith('_S');
+    if (data === true) return true;
     const r = data?.response;
-    return typeof r === 'string' && r.startsWith('_S');
+    if (typeof r === 'string') return r.startsWith('_S');
+    return data?.success === true;
   }
 
-  /** Privilege entries come back as bare strings from some functions and as
-   *  objects from others - same widened match AC's roles-page uses. */
-  private name(p: any): string {
-    return String(p?.privilege_name ?? p?.name ?? p?.privilege ?? p ?? '').trim();
+  private static key(name: string): string {
+    return String(name ?? '').trim().toLowerCase();
   }
 
-  /** The active database's NAME (not gid) - what these auth functions key
-   *  on. Read live from the session, falling back to a gid->name lookup
-   *  through the databases list when currentDb only carries a gid. */
-  async activeDbName(): Promise<string> {
-    const pick = (db: any): string =>
-      String(db?.name ?? db?.db_name ?? db?.database_name ?? db?.database ?? '').trim();
+  // ─── Roles ──────────────────────────────────────────────────────────────
 
-    let db = this.session.currentDb();
-    let name = pick(db);
-    if (!name) {
-      try {
-        db = await this.session.ensureCurrentDb();
-        name = pick(db);
-      } catch {
-        /* fall through to the gid lookup below */
-      }
+  /** Every client-local role on the active database, all utilities. */
+  async listRoles(): Promise<ClientRole[]> {
+    const res = await this.api.rolesList();
+    const rows = (Array.isArray(res) ? res : (res as any)?.roles) ?? [];
+    const roles: ClientRole[] = (rows as any[])
+      .filter((r) => r && r.role_gid && r.role_name)
+      .map((r) => ({
+        pk: Number(r.pk ?? 0),
+        role_name: String(r.role_name).trim(),
+        role_gid: String(r.role_gid),
+        utility_name: String(r.utility_name ?? '').trim(),
+        is_system: !!r.is_system,
+        created_by: String(r.created_by ?? ''),
+        created_date: String(r.created_date ?? ''),
+      }))
+      .sort((a, b) => a.role_name.localeCompare(b.role_name));
+    this.roleCache = roles;
+    return roles;
+  }
+
+  /** From the last `listRoles()` — refreshes the list if the gid is unknown. */
+  async roleByGid(role_gid: string): Promise<ClientRole | null> {
+    let hit = this.roleCache.find((r) => r.role_gid === role_gid) ?? null;
+    if (!hit) {
+      await this.listRoles();
+      hit = this.roleCache.find((r) => r.role_gid === role_gid) ?? null;
     }
-    if (name) return name;
-
-    const gid = String(db?.db_gid ?? db?.global_id ?? db?.gid ?? '').trim();
-    if (!gid) return '';
-    try {
-      const all = this.session.databases().length ? this.session.databases() : await this.session.fetchDatabases();
-      const hit = (all ?? []).find(
-        (d: any) => String(d?.db_gid ?? d?.global_id ?? d?.gid ?? '').trim() === gid,
-      );
-      return pick(hit);
-    } catch {
-      return '';
-    }
+    return hit;
   }
 
-  /**
-   * The whole privilege catalogue for a utility - the list to pick from.
-   * Deduplicated by name: verified live 11 Sep, the auth API returns 144
-   * rows for 136 names under GIS System (the Stock set and
-   * _manage_client_roles appear twice). Every function here keys by NAME,
-   * so a repeat is the same privilege said twice - but linking it twice
-   * and counting it twice would be wrong. Backend has been asked to dedupe
-   * the source.
-   */
-  async availablePrivileges(utility = 'GIS System'): Promise<string[]> {
-    const data = await this.call({ function: '_available_privileges', utility });
-    const list = this.ok(data) ? (data?.privilege_list ?? []) : [];
-    const names = (Array.isArray(list) ? list : []).map((p) => this.name(p)).filter(Boolean);
-    return Array.from(new Set(names));
-  }
-
-  /** Privileges currently ON a role, for this database. This is the call
-   *  the GIS `/roles/*` surface has no equivalent for - it is what lets the
-   *  privilege editor show real state instead of a blind action list. */
-  async rolePrivileges(role: string, utility = 'GIS System'): Promise<string[]> {
-    const db_name = await this.activeDbName();
-    const payload: Record<string, any> = { function: '_check_role_privileges', utility, role };
-    if (db_name) payload['db_name'] = db_name;
-    const data = await this.call(payload);
-    const list = this.ok(data) ? (data?.privilege_list ?? []) : [];
-    return (Array.isArray(list) ? list : []).map((p) => this.name(p)).filter(Boolean);
-  }
-
-  /**
-   * Roles defined for a utility ON THE ACTIVE DATABASE.
-   *
-   * `_available_roles` is not scoped to the session's database - verified
-   * live 11 Sep, it returns every database's roles as `{role_name,
-   * db_name}` (15 rows for five databases each holding the standard
-   * three). Filtered here by the active db's name, compared loosely, since
-   * the auth API spells names like "web-demo" and other sources say
-   * "web_demo". If the active name cannot be resolved the list is returned
-   * unfiltered and a warning logged, rather than silently empty.
-   */
-  async availableRoles(utility = 'GIS System'): Promise<string[]> {
-    const data = await this.call({ function: '_available_roles', utility });
-    const list = this.ok(data) ? (data?.role_list ?? []) : [];
-    const rows = (Array.isArray(list) ? list : []).map((r: any) => ({
-      role: String(r?.role_name ?? r?.name ?? r?.role ?? r ?? '').trim(),
-      db: String(r?.db_name ?? r?.database ?? '').trim(),
-    })).filter((r) => r.role);
-
-    const mine = this.dbKey(await this.activeDbName());
-    if (!mine) {
-      console.warn('[ClientRoles] active db name unresolved - role list is unfiltered across databases');
-      return Array.from(new Set(rows.map((r) => r.role)));
-    }
-    // Rows without a db_name are treated as global (utility-wide) roles.
-    return Array.from(new Set(rows.filter((r) => !r.db || this.dbKey(r.db) === mine).map((r) => r.role)));
-  }
-
-  /** "web-demo", "web_demo", "Web Demo" -> "webdemo". */
-  private dbKey(name: string): string {
-    return String(name ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  }
-
-  async assignPrivilege(role: string, privilege: string, utility = 'GIS System'): Promise<boolean> {
-    const db_name = await this.activeDbName();
-    const payload: Record<string, any> = { function: '_assign_role_privilege', utility, role, privilege };
-    if (db_name) payload['db_name'] = db_name;
-    return this.ok(await this.call(payload));
-  }
-
-  async removePrivilege(role: string, privilege: string, utility = 'GIS System'): Promise<boolean> {
-    const db_name = await this.activeDbName();
-    const payload: Record<string, any> = { function: '_remove_role_privilege', utility, role, privilege };
-    if (db_name) payload['db_name'] = db_name;
-    return this.ok(await this.call(payload));
-  }
-
-  // ─── Roles (the enforced ones) ───────────────────────────────────────────
-
-  /** Stable key for a role the Auth API identifies only by (utility, name). */
-  static roleKey(utility: string, role: string): string {
-    return `${String(utility ?? '').trim()}::${String(role ?? '').trim()}`;
-  }
-
-  /** Inverse of roleKey. */
-  static parseRoleKey(key: string): { utility: string; role: string } {
-    const i = String(key ?? '').indexOf('::');
-    return i < 0
-      ? { utility: 'GIS System', role: String(key ?? '') }
-      : { utility: key.slice(0, i), role: key.slice(i + 2) };
-  }
-
-  /**
-   * Every role on the active database across the given utilities, in the
-   * `ClientRole` shape the access-control screen already renders. One
-   * `_available_roles` call per utility; the auth function scopes to the
-   * session's current database.
-   */
-  async listRoles(utilities: string[]): Promise<ClientRole[]> {
-    const uniq = Array.from(new Set(utilities.map((u) => String(u ?? '').trim()).filter(Boolean)));
-    const perUtility = await Promise.all(
-      uniq.map(async (utility) => {
-        try {
-          const names = await this.availableRoles(utility);
-          return names.map((role_name) => ({ utility_name: utility, role_name }));
-        } catch (err) {
-          console.warn('[ClientRoles] _available_roles failed for', utility, err);
-          return [];
-        }
-      }),
+  /** Case-insensitive name + utility match against the last list. `null`
+   *  when missing OR duplicated — a duplicate must never be picked blind. */
+  findRole(role_name: string, utility_name: string): ClientRole | null {
+    const n = ClientRolesService.key(role_name);
+    const u = ClientRolesService.key(utility_name);
+    const hits = this.roleCache.filter(
+      (r) => ClientRolesService.key(r.role_name) === n && ClientRolesService.key(r.utility_name) === u,
     );
-    return perUtility.flat().map((r) => ({
-      pk: 0,
-      role_name: r.role_name,
-      role_gid: ClientRolesService.roleKey(r.utility_name, r.role_name),
-      utility_name: r.utility_name,
-      is_system: false,
-      created_by: '',
-      created_date: '',
-    }));
+    return hits.length === 1 ? hits[0] : null;
+  }
+
+  /** Throws with the server's detail on failure so the caller can show it. */
+  async createRole(role_name: string, utility_name = 'GIS System', is_system = false): Promise<ClientRole> {
+    const res: any = await this.api.roleCreate({ role_name, utility_name, is_system });
+    if (!this.ok(res) && !res?.role_gid) {
+      throw new Error(res?.detail ?? res?.message ?? 'The API did not confirm the role was created.');
+    }
+    await this.listRoles();
+    const created = res?.role_gid
+      ? this.roleCache.find((r) => r.role_gid === String(res.role_gid))
+      : this.findRole(role_name, utility_name);
+    if (!created) throw new Error('Role created but not found on re-read — refresh and try again.');
+    return created;
+  }
+
+  async deleteRole(role: ClientRole): Promise<boolean> {
+    const res = await this.api.roleDelete(role.role_gid);
+    const ok = this.ok(res);
+    if (ok) this.roleCache = this.roleCache.filter((r) => r.role_gid !== role.role_gid);
+    return ok;
+  }
+
+  // ─── Privileges ─────────────────────────────────────────────────────────
+
+  /**
+   * The whole privilege catalogue on this database, as NAMES. Loads (and
+   * caches) the name<->gid maps every write below needs. `utility` narrows
+   * the returned names; the maps always hold everything.
+   */
+  async availablePrivileges(utility?: string): Promise<string[]> {
+    const res = await this.api.privilegesList();
+    const rows = (Array.isArray(res) ? res : (res as any)?.privileges) ?? [];
+    this.privByName.clear();
+    this.privByGid.clear();
+    const all: ClientPrivilege[] = [];
+    for (const p of rows as any[]) {
+      if (!p?.privilege_gid || !p?.privilege_name) continue;
+      const cp: ClientPrivilege = {
+        pk: Number(p.pk ?? 0),
+        privilege_name: String(p.privilege_name).trim(),
+        privilege_gid: String(p.privilege_gid),
+        utility_name: String(p.utility_name ?? '').trim(),
+      };
+      // First one wins on a duplicate NAME — the catalogue has carried
+      // repeats before (Auth API: 144 rows / 136 names); one gid per name
+      // is what the editor needs.
+      if (!this.privByName.has(ClientRolesService.key(cp.privilege_name))) {
+        this.privByName.set(ClientRolesService.key(cp.privilege_name), cp);
+      }
+      this.privByGid.set(cp.privilege_gid, cp);
+      all.push(cp);
+    }
+    const u = utility ? ClientRolesService.key(utility) : '';
+    const picked = u ? all.filter((p) => ClientRolesService.key(p.utility_name) === u) : all;
+    // A catalogue whose rows don't carry the asked-for utility_name (or carry
+    // none) is still the catalogue — don't return nothing on a label mismatch.
+    const src = picked.length ? picked : all;
+    return Array.from(new Set(src.map((p) => p.privilege_name))).sort();
+  }
+
+  private async privilegeGid(name: string): Promise<string | null> {
+    if (this.privByName.size === 0) await this.availablePrivileges();
+    return this.privByName.get(ClientRolesService.key(name))?.privilege_gid ?? null;
   }
 
   /**
-   * Create a role on the active database. This is a REST route on the
-   * auth API (`/auth/role/create`), not a `function:` call - same route
-   * CES_ACCESS_CONTROL's RoleService uses. Needs the db GID, not name.
+   * Privileges linked to ONE role, as names. Uses the `role_gid` filter on
+   * `/roles/privileges/list` (API 91ce046, 16 Sep) and trusts the answer
+   * ONLY when the server echoes the gid back — an older API returns the
+   * whole catalogue for this call, which would read as "this role has
+   * everything". Throws in that case rather than lie.
    */
-  async createRole(role: string, utility = 'GIS System'): Promise<boolean> {
-    const role_name = String(role ?? '').trim();
-    if (!role_name) throw new Error('Role name is required.');
-    const db_gid = await this.activeDbGid();
-    if (!db_gid) throw new Error('No active database.');
-    const res = await fetch(`${this.AUTH_API}/role/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_gid: this.sessionGid, utility, role_name, db_gid }),
-    });
-    let data: any = null;
-    try { data = await res.json(); } catch { data = null; }
-    if (this.ok(data)) return true;
-    if (typeof data === 'string') {
-      const t = data.trim().toLowerCase();
-      if (t.startsWith('_s') || t.includes('success')) return true;
+  async rolePrivileges(role: ClientRole): Promise<string[]> {
+    const res: any = await this.api.privilegesListForRole(role.role_gid);
+    if (String(res?.role_gid ?? '') !== role.role_gid) {
+      throw new Error('This API build cannot report a single role\'s privileges (no role_gid echo) — it needs the 16 Sep /roles/privileges/list change.');
     }
-    const detail = data?.detail ?? data?.response ?? (typeof data === 'string' ? data : '') ?? '';
-    throw new Error(String(detail || `Role create failed (${res.status}).`));
-  }
-
-  /** Emails holding a role on the active database. */
-  async roleUsers(role: string, utility = 'GIS System'): Promise<string[]> {
-    const db_name = await this.activeDbName();
-    const payload: Record<string, any> = { function: '_check_role_users', utility, role };
-    if (db_name) payload['db_name'] = db_name;
-    const data = await this.call(payload);
-    const list = this.ok(data) ? (data?.emails ?? data?.email_list ?? data?.users ?? []) : [];
-    return (Array.isArray(list) ? list : [])
-      .map((e: any) => String(e?.email ?? e?.user_email ?? e ?? '').trim().toLowerCase())
+    if (this.privByName.size === 0) await this.availablePrivileges();
+    const rows = (Array.isArray(res?.privileges) ? res.privileges : []) as any[];
+    return rows
+      .map((p) => String(p?.privilege_name ?? this.privByGid.get(String(p?.privilege_gid ?? ''))?.privilege_name ?? '').trim())
       .filter(Boolean);
   }
 
-  /** Same as roleUsers, keeping the user_gid the auth API sends alongside. */
-  async roleUserRows(role: string, utility = 'GIS System'): Promise<Array<{ email: string; user_gid: string }>> {
-    const db_name = await this.activeDbName();
-    const payload: Record<string, any> = { function: '_check_role_users', utility, role };
-    if (db_name) payload['db_name'] = db_name;
-    const data = await this.call(payload);
-    const list = this.ok(data) ? (data?.emails ?? data?.email_list ?? data?.users ?? []) : [];
-    return (Array.isArray(list) ? list : [])
-      .map((e: any) => ({
-        email: String(e?.email ?? e?.user_email ?? e ?? '').trim().toLowerCase(),
-        user_gid: String(e?.user_gid ?? e?.gid ?? '').trim(),
-      }))
-      .filter((r) => r.email);
+  async assignPrivilege(role: ClientRole, privilege_name: string): Promise<boolean> {
+    const privilege_gid = await this.privilegeGid(privilege_name);
+    if (!privilege_gid) {
+      console.warn('[ClientRoles] no client-local privilege named', privilege_name, '— not on this database\'s catalogue');
+      return false;
+    }
+    return this.ok(await this.api.privilegeAssign({ role_gid: role.role_gid, privilege_gid }));
   }
+
+  async removePrivilege(role: ClientRole, privilege_name: string): Promise<boolean> {
+    const privilege_gid = await this.privilegeGid(privilege_name);
+    if (!privilege_gid) return false;
+    return this.ok(await this.api.privilegeRevoke({ role_gid: role.role_gid, privilege_gid }));
+  }
+
+  // ─── User <-> role ──────────────────────────────────────────────────────
 
   /**
-   * Every (user, role) pair on the active database, built from one
-   * `_check_role_users` per role. `user_gid` carries the EMAIL - the auth
-   * API has no user gid in this surface, and email is what every join in
-   * the screen actually needs.
+   * Every (user, role) pair on the active database. The API returns
+   * `user_gid` (no email); the component joins to the db-users directory
+   * for display. role_name / utility_name are filled from the role list
+   * when the row doesn't carry them.
    */
-  async listAssignments(roles: ClientRole[]): Promise<UserRoleAssignment[]> {
-    const perRole = await Promise.all(
-      roles.map(async (r) => {
-        try {
-          const users = await this.roleUserRows(r.role_name, r.utility_name);
-          return users.map(({ email, user_gid }) => ({
-            user_gid: user_gid || email,
-            user_email: email,
-            role_gid: r.role_gid,
-            role_name: r.role_name,
-            utility_name: r.utility_name,
-            assigned_by: '',
-            assigned_date: '',
-          }));
-        } catch (err) {
-          console.warn('[ClientRoles] _check_role_users failed for', r.role_gid, err);
-          return [];
-        }
-      }),
-    );
-    return perRole.flat();
+  async listAssignments(): Promise<UserRoleAssignment[]> {
+    if (this.roleCache.length === 0) await this.listRoles();
+    const byGid = new Map(this.roleCache.map((r) => [r.role_gid, r]));
+    const res = await this.api.userRolesList(null);
+    const rows = (Array.isArray(res) ? res : (res as any)?.assignments) ?? [];
+    return (rows as any[])
+      .filter((a) => a && a.role_gid)
+      .map((a) => {
+        const role = byGid.get(String(a.role_gid));
+        return {
+          user_gid: String(a.user_gid ?? ''),
+          user_email: a.user_email ? String(a.user_email).trim().toLowerCase() : undefined,
+          role_gid: String(a.role_gid),
+          role_name: String(a.role_name ?? role?.role_name ?? ''),
+          utility_name: String(a.utility_name ?? role?.utility_name ?? ''),
+          assigned_by: String(a.assigned_by ?? ''),
+          assigned_date: String(a.assigned_date ?? ''),
+        };
+      });
   }
 
-  async assignUserRole(email: string, role: string, utility = 'GIS System'): Promise<boolean> {
-    const db_name = await this.activeDbName();
-    const payload: Record<string, any> = {
-      function: '_assign_user_role',
-      email: String(email ?? '').trim(),
-      utility,
-      role,
-    };
-    if (db_name) payload['db_name'] = db_name;
-    return this.ok(await this.call(payload));
+  async assignUserRole(user_email: string, role: ClientRole): Promise<boolean> {
+    return this.ok(await this.api.userRoleAssign({ user_email, role_gid: role.role_gid }));
   }
 
-  async removeUserRole(email: string, role: string, utility = 'GIS System'): Promise<boolean> {
-    const db_name = await this.activeDbName();
-    const payload: Record<string, any> = {
-      function: '_remove_user_role',
-      email: String(email ?? '').trim(),
-      utility,
-      role,
-    };
-    if (db_name) payload['db_name'] = db_name;
-    return this.ok(await this.call(payload));
+  async removeUserRole(user_email: string, role_gid: string): Promise<boolean> {
+    return this.ok(await this.api.userRoleRevoke({ user_email, role_gid }));
   }
 
-  /** The real check - what every protected endpoint asks. Uncached. */
-  async checkFunctionPermission(privilege: string, utility = 'GIS System'): Promise<boolean> {
-    const data = await this.call({ function: '_check_function_permission', utility, privilege });
-    if (typeof data === 'boolean') return data;
-    if (typeof data?.has_permission === 'boolean') return data.has_permission;
-    if (typeof data?.permission === 'boolean') return data.permission;
-    if (typeof data?.allowed === 'boolean') return data.allowed;
-    return this.ok(data);
-  }
+  // ─── Check ──────────────────────────────────────────────────────────────
 
-  /** The active database's GID - what `/role/create` keys on. */
-  private async activeDbGid(): Promise<string> {
-    const pick = (db: any) => String(db?.db_gid ?? db?.global_id ?? db?.gid ?? '').trim();
-    let gid = pick(this.session.currentDb());
-    if (gid) return gid;
-    try {
-      gid = pick(await this.session.ensureCurrentDb());
-    } catch {
-      /* fall through */
-    }
-    return gid;
+  /** The client-local half of dual-check, for the caller's own session. */
+  async checkClientPermission(privilege: string): Promise<boolean> {
+    const res: any = await this.api.checkPermission(privilege);
+    if (typeof res?.has_permission === 'boolean') return res.has_permission;
+    return false;
   }
 }
