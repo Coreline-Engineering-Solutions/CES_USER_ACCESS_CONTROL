@@ -57,12 +57,23 @@ export class UserUtilitiesService {
 
   /**
    * What this manager may actually assign: everything they hold themselves,
-   * intersected with what exists. System Managers get the full list.
+   * intersected with what exists.
+   *
+   * System Managers used to get the full platform list. That was wrong once
+   * a CLIENT's own admin could be one: `_list_user_projects` is what makes
+   * someone a System Manager, and the Auth `Manager` role carries it, so a
+   * client super user was being offered every utility on the platform —
+   * including tools their company has nothing to do with. Granting one
+   * would have put a tile on a user's dashboard for a product that is not
+   * theirs.
+   *
+   * The ceiling is now the same for everyone: you can hand out the toolsets
+   * you hold yourself. For a client admin that is exactly their company's
+   * set; for CES staff it is whatever they have been given, and the Admin
+   * Portal remains the place to manage the platform as a whole.
    */
   readonly assignable = computed<string[]>(() => {
     const all = this.available();
-    if (this.session.isSystemManager()) return all;
-
     const mineKeys = new Set(this.mine().map(utilityKey));
     if (mineKeys.size === 0) return [];
     // Prefer the platform's spelling where we have it, so what we send back
@@ -146,7 +157,9 @@ export class UserUtilitiesService {
   }
 
   canAssign(utility: string): boolean {
-    if (this.session.isSystemManager()) return true;
+    // No System Manager bypass — see `assignable` for why. This is the
+    // guard the write path calls, so the bypass had to go from both or the
+    // dropdown would narrow while the API call stayed wide open.
     const k = utilityKey(utility);
     return this.assignable().some((u) => utilityKey(u) === k);
   }
