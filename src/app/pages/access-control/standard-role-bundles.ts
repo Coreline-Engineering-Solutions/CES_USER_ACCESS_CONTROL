@@ -164,3 +164,24 @@ export const STANDARD_ROLE_BUNDLES: readonly StandardRoleBundle[] = [
 
 /** Names the spec lists explicitly — for the "cannot link" check on the two list bundles. */
 export const EXPLICIT_BUNDLE_NAMES: ReadonlySet<string> = new Set([...VIEWER, ...PLANNER_ADDS]);
+
+/**
+ * Which standard roles are missing from a database.
+ *
+ * `loaded` is not optional politeness — it is the whole point. The role list
+ * is empty both when a database genuinely has no roles and when the read was
+ * refused, and those are opposite facts. Treating the second as the first is
+ * what made the Client Portal offer "Create them" on databases that already
+ * had Manager, Planner and Viewer, producing empty duplicates.
+ *
+ * When the list was not read, nothing is reported missing.
+ */
+export function missingStandardRoleNames(
+  loaded: boolean,
+  roleNames: readonly string[],
+  standard: readonly string[],
+): string[] {
+  if (!loaded) return [];
+  const have = new Set(roleNames.map((n) => String(n ?? '').trim().toLowerCase()));
+  return standard.filter((n) => !have.has(n.toLowerCase()));
+}

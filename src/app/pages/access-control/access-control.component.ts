@@ -10,6 +10,7 @@ import {
   NEVER_SEED,
   STANDARD_ROLE_BUNDLES,
   STANDARD_ROLE_UTILITY,
+  missingStandardRoleNames,
   type StandardRoleName,
 } from './standard-role-bundles';
 import { ClientRole, UserRoleAssignment } from '../../services/roles.types';
@@ -135,6 +136,16 @@ export class AccessControlComponent implements OnInit {
 
   // ─── Client roles/privileges ────────────────────────────────────────────
   readonly roles = signal<ClientRole[]>([]);
+
+  /**
+   * Did the last `load()` actually read the role list?
+   *
+   * `roles` starts empty and stays empty when `listRoles()` throws, so an
+   * empty list means either "this database has no roles" or "we were not
+   * allowed to look". Those are opposite facts and the UI acted on the wrong
+   * one — see `missingStandardRoles`.
+   */
+  readonly rolesLoaded = signal(false);
   /** Privilege NAMES from this database's client-local catalogue
    *  (`/roles/privileges/list`) — the set a role on this database can carry. */
   readonly privileges = signal<string[]>([]);
@@ -213,8 +224,20 @@ export class AccessControlComponent implements OnInit {
   readonly canSeedStandardRoles = computed(() => this.canManageRoles() && this.session.isSystemManager());
 
   readonly missingStandardRoles = computed<string[]>(() => {
-    const have = new Set(this.roles().map((r) => r.role_name.trim().toLowerCase()));
-    return AccessControlComponent.STANDARD_ROLES.filter((n) => !have.has(n.toLowerCase()));
+    // Never infer absence from a read we did not get. Without this, a 401 on
+    // `/roles/list` left `roles()` empty, so every standard role looked
+    // missing and the UI offered "Create them" — on a database that already
+    // had them. Clicking it produced empty duplicates.
+    //
+    // That is almost certainly how Fibretime ended up with three empty
+    // Manager/Planner/Viewer rows, created the same day by one user, on a
+    // tenant whose real roles were already populated. gustav and tiaan spent
+    // a week untangling those.
+    return missingStandardRoleNames(
+      this.rolesLoaded(),
+      this.roles().map((r) => r.role_name),
+      AccessControlComponent.STANDARD_ROLES,
+    );
   });
 
   readonly seedOpen = signal(false);
@@ -946,6 +969,9 @@ export class AccessControlComponent implements OnInit {
   async load(): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
+    // Down until the role list is actually in hand. A failed read must not
+    // look like an empty database.
+    this.rolesLoaded.set(false);
     try {
       // Everything here is the client-local store on the session's active
       // database — the one /roles/my-privileges and every gate read. One
@@ -960,6 +986,7 @@ export class AccessControlComponent implements OnInit {
       ]);
       const assignments = await this.clientRoles.listAssignments();
       this.roles.set(roles);
+      this.rolesLoaded.set(true);
       this.privileges.set(privNames);
       this.assignments.set(assignments);
     } catch (err: any) {
