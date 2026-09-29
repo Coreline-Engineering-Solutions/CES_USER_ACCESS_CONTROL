@@ -146,6 +146,40 @@ export class AccessControlComponent implements OnInit {
    * one — see `missingStandardRoles`.
    */
   readonly rolesLoaded = signal(false);
+
+  /**
+   * role_gid -> number of privileges linked, so the roles table can tell two
+   * rows of the same name apart.
+   *
+   * This costs one request per role because `/roles/list` does not carry a
+   * count. That is a fan-out and I would rather not have written one — it is
+   * bounded (a tenant has a handful of roles, not hundreds), it only runs on
+   * the roles tab, and it is what makes Delete a safe decision instead of a
+   * coin toss. Asked tiaan to fold the count into `/roles/list`; when it
+   * lands this goes away.
+   */
+  readonly rolePrivilegeCounts = signal<Record<string, number>>({});
+
+  private async loadRolePrivilegeCounts(roles: ClientRole[]): Promise<void> {
+    const counts: Record<string, number> = {};
+    const queue = [...roles];
+    const worker = async () => {
+      for (;;) {
+        const role = queue.shift();
+        if (!role) return;
+        try {
+          const names = await this.clientRoles.rolePrivileges(role);
+          counts[role.role_gid] = names.length;
+        } catch {
+          // A count we could not read is left absent rather than shown as 0 —
+          // a false zero here is exactly the "empty duplicate" signal someone
+          // would delete on.
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+    this.rolePrivilegeCounts.set(counts);
+  }
   /** Privilege NAMES from this database's client-local catalogue
    *  (`/roles/privileges/list`) — the set a role on this database can carry. */
   readonly privileges = signal<string[]>([]);
@@ -987,6 +1021,7 @@ export class AccessControlComponent implements OnInit {
       const assignments = await this.clientRoles.listAssignments();
       this.roles.set(roles);
       this.rolesLoaded.set(true);
+      void this.loadRolePrivilegeCounts(roles);
       this.privileges.set(privNames);
       this.assignments.set(assignments);
     } catch (err: any) {
@@ -1021,19 +1056,57 @@ export class AccessControlComponent implements OnInit {
 
   readonly deletingRoleGid = signal('');
 
-  /** `/roles/delete` cascades the role's privilege links and user
-   *  assignments on this database. Confirmed by name because there is no
-   *  undo, and the row IS what the gates read now. */
-  async deleteRole(role: ClientRole): Promise<void> {
+  /**
+   * How many users hold a role. The roles table showed name, utility and type
+   * only, so two rows called "Manager | GIS System | Custom" were identical on
+   * screen while one carried 136 privileges and four users and the other was
+   * an empty duplicate — and Delete was offered on both. There was no way to
+   * choose correctly except by guessing.
+   */
+  usersOnRole(roleGid: string): number {
+    return this.assignments().filter((a) => a.role_gid === roleGid).length;
+  }
+
+  /**
+   * Privileges linked to a role. `null` means "not counted yet or unreadable"
+   * — deliberately not 0, because a false zero is the signal someone deletes
+   * on.
+   */
+  privilegeCountFor(roleGid: string): number | null {
+    const n = this.rolePrivilegeCounts()[roleGid];
+    return typeof n === 'number' ? n : null;
+  }
+
+  /**
+   * The role pending deletion, or null. Drives the confirm dialog.
+   *
+   * This used to be `window.confirm()`. Two problems with that: it is
+   * dismissed silently in some contexts — the caller returns early, no
+   * request is made and nothing appears on screen, which reads exactly like
+   * a broken button — and it cannot show the one thing that makes this
+   * decision safe, which is what the role actually contains.
+   */
+  readonly rolePendingDelete = signal<ClientRole | null>(null);
+
+  askDeleteRole(role: ClientRole): void {
     if (role.is_system) {
       this.error.set(`"${role.role_name}" is a system role and cannot be deleted here.`);
       return;
     }
-    const holders = this.assignments().filter((a) => a.role_gid === role.role_gid).length;
-    const msg = holders
-      ? `Delete "${role.role_name}"? ${holders} user${holders === 1 ? '' : 's'} hold it — they lose every privilege it grants, immediately.`
-      : `Delete "${role.role_name}"? Its privilege links go with it.`;
-    if (!window.confirm(msg)) return;
+    this.rolePendingDelete.set(role);
+  }
+
+  cancelDeleteRole(): void {
+    this.rolePendingDelete.set(null);
+  }
+
+  /** `/roles/delete` cascades the role's privilege links and user
+   *  assignments on this database. There is no undo, and the row IS what the
+   *  gates read now. */
+  async confirmDeleteRole(): Promise<void> {
+    const role = this.rolePendingDelete();
+    if (!role) return;
+    this.rolePendingDelete.set(null);
     this.deletingRoleGid.set(role.role_gid);
     this.error.set(null);
     try {

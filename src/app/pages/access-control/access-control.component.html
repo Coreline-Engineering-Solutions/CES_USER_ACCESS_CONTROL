@@ -149,27 +149,73 @@
              dozens of roles keeps the filter and header in view. -->
         <div class="tablewrap" style="max-height:min(58vh,560px);overflow:auto">
           <table>
-            <thead><tr><th>Role</th><th>Utility</th><th>Type</th>@if (canManageRoles()) { <th class="actions">Actions</th> }</tr></thead>
+            <!-- Privileges and Users are not decoration: without them two rows
+                 called "Manager / GIS System / Custom" are identical on screen
+                 while one is the real role and one is an empty duplicate. -->
+            <thead><tr><th>Role</th><th>Utility</th><th>Type</th><th class="num">Privileges</th><th class="num">Users</th>@if (canManageRoles()) { <th class="actions">Actions</th> }</tr></thead>
             <tbody>
               @for (r of filteredRoles(); track r.role_gid) {
                 <tr>
                   <td><strong>{{ r.role_name }}</strong></td>
                   <td class="num">{{ r.utility_name }}</td>
                   <td class="num">{{ r.is_system ? 'System' : 'Custom' }}</td>
+                  <td class="num" [title]="privilegeCountFor(r.role_gid) === null ? 'Not counted yet' : 'Privileges linked to this role'">
+                    {{ privilegeCountFor(r.role_gid) === null ? '…' : privilegeCountFor(r.role_gid) }}
+                  </td>
+                  <td class="num" [title]="'Users holding this role'">{{ usersOnRole(r.role_gid) }}</td>
                   @if (canManageRoles()) {
                     <td class="actions" style="white-space:nowrap">
                       <button class="btn" (click)="openRolePrivileges(r)">Privileges</button>
-                      <button class="btn" [disabled]="r.is_system || deletingRoleGid() === r.role_gid" [title]="r.is_system ? 'System role — cannot be deleted here' : 'Delete this role from this database'" (click)="deleteRole(r)">{{ deletingRoleGid() === r.role_gid ? 'Deleting…' : 'Delete' }}</button>
+                      <button class="btn" [disabled]="r.is_system || deletingRoleGid() === r.role_gid" [title]="r.is_system ? 'System role — cannot be deleted here' : 'Delete this role from this database'" (click)="askDeleteRole(r)">{{ deletingRoleGid() === r.role_gid ? 'Deleting…' : 'Delete' }}</button>
                     </td>
                   }
                 </tr>
               } @empty {
-                <tr><td colspan="4" style="color:var(--gc-text-muted)">
+                <tr><td colspan="6" style="color:var(--gc-text-muted)">
                   {{ roleSearch() ? 'No roles match that filter.' : 'No roles on this database yet.' }}
                 </td></tr>
               }
             </tbody>
           </table>
+        </div>
+      </div>
+    }
+
+    <!-- Delete confirmation. Replaces window.confirm(), which could be
+         dismissed silently — no request, no message, a button that looked
+         broken — and could not show what the role actually holds. -->
+    @if (rolePendingDelete(); as pending) {
+      <div class="scrim on" role="dialog" aria-modal="true" aria-label="Delete role">
+        <div class="modal" style="width:460px">
+          <h3>Delete "{{ pending.role_name }}"?</h3>
+          <p>
+            This removes the role from <strong>this database</strong>, along with its
+            privilege links and every user assignment. There is no undo.
+          </p>
+          <table style="margin:0.75rem 0">
+            <tbody>
+              <tr><td>Utility</td><td class="num">{{ pending.utility_name }}</td></tr>
+              <tr><td>Privileges</td><td class="num">{{ privilegeCountFor(pending.role_gid) === null ? 'not counted' : privilegeCountFor(pending.role_gid) }}</td></tr>
+              <tr><td>Users holding it</td><td class="num">{{ usersOnRole(pending.role_gid) }}</td></tr>
+            </tbody>
+          </table>
+          @if (usersOnRole(pending.role_gid) > 0) {
+            <p class="warn">
+              <strong>{{ usersOnRole(pending.role_gid) }}</strong>
+              user{{ usersOnRole(pending.role_gid) === 1 ? '' : 's' }} hold this role and
+              lose every privilege it grants, immediately.
+            </p>
+          }
+          @if (privilegeCountFor(pending.role_gid) === null) {
+            <p class="warn">
+              The privilege count for this role could not be read, so this dialog cannot
+              tell you whether it is empty. Worth checking before deleting.
+            </p>
+          }
+          <div class="row" style="justify-content:flex-end;gap:0.5rem">
+            <button class="btn" (click)="cancelDeleteRole()">Cancel</button>
+            <button class="btn danger" (click)="confirmDeleteRole()">Delete role</button>
+          </div>
         </div>
       </div>
     }
@@ -265,7 +311,7 @@
                 }
               </tr>
             } @empty {
-              <tr><td colspan="4" style="color:var(--gc-text-muted)">No users linked to this database yet — use "+ Add user" above.</td></tr>
+              <tr><td colspan="6" style="color:var(--gc-text-muted)">No users linked to this database yet — use "+ Add user" above.</td></tr>
             }
           </tbody>
         </table>
