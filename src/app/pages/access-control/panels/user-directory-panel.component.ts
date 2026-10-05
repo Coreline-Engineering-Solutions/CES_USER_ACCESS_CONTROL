@@ -8,6 +8,7 @@ import { ClientRolesService } from '../../../services/client-roles.service';
 import { SessionService } from '../../../session/session.service';
 import { OrgRow, StockLocation } from '../../../services/stock-access.types';
 import { ModuleAccessEntry, ModuleSummary } from '../../../services/modules-access.types';
+import { CesIconComponent } from '../../../ui/ces-icon/ces-icon.component';
 
 type GrantSystem = 'stock' | 'gis' | 'modules' | 'roles';
 
@@ -61,7 +62,7 @@ const SYSTEM_LABEL: Record<GrantSystem, string> = {
 @Component({
   selector: 'app-user-directory-panel',
   standalone: true,
-  imports: [FormsModule],
+  imports: [CesIconComponent, FormsModule],
   templateUrl: './user-directory-panel.component.html',
 })
 export class UserDirectoryPanelComponent implements OnInit {

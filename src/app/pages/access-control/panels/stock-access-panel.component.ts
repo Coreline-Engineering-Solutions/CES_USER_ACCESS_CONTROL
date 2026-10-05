@@ -5,6 +5,7 @@ import { StockAccessApiService } from '../../../services/stock-access-api.servic
 import { SessionService } from '../../../session/session.service';
 import { AccessRole, AccessScope, GeoPoint, LocationAccessGrant, LocationType, OrgRow, StockLocation, StockUserRef } from '../../../services/stock-access.types';
 import { PlaceSearchService, PlaceHit } from '../../../services/place-search.service';
+import { CesIconComponent } from '../../../ui/ces-icon/ces-icon.component';
 
 /** One user, plus every grant they currently hold in this project. */
 interface UserGrantGroup {
@@ -46,7 +47,7 @@ const ORG_LABEL_OVERRIDES: Record<string, string> = {
 @Component({
   selector: 'app-stock-access-panel',
   standalone: true,
-  imports: [FormsModule, TitleCasePipe],
+  imports: [CesIconComponent, FormsModule, TitleCasePipe],
   templateUrl: './stock-access-panel.component.html',
 })
 export class StockAccessPanelComponent implements OnInit {

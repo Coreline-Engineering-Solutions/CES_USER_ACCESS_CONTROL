@@ -1,11 +1,12 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { SessionService } from '../../session/session.service';
 import { cesAppUrl } from '../../ces-hosts';
+import { CesIconComponent } from '../ces-icon/ces-icon.component';
 
 @Component({
   selector: 'app-navbar',
   standalone: true,
-  imports: [],
+  imports: [CesIconComponent, ],
   templateUrl: './navbar.component.html',
   styleUrl: './navbar.component.scss',
 })

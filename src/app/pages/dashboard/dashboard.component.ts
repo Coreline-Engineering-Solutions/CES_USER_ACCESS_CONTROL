@@ -6,6 +6,7 @@ import { DbUsersService } from '../../services/db-users.service';
 import { SessionService } from '../../session/session.service';
 import { AccessRole, LocationAccessGrant, StockLocation } from '../../services/stock-access.types';
 import { ClientPrivilege, ClientRole, UserRoleAssignment } from '../../services/roles.types';
+import { CesIconComponent } from '../../ui/ces-icon/ces-icon.component';
 
 /**
  * Roles carrying more than read access. Worth surfacing separately from a raw
@@ -19,7 +20,7 @@ const ALL_ROLES: AccessRole[] = ['viewer', 'operator', 'receiver', 'custodian', 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [RouterLink],
+  imports: [CesIconComponent, RouterLink],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss',
 })

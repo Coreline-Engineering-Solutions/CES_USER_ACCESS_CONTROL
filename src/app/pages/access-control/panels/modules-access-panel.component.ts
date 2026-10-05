@@ -5,6 +5,7 @@ import { ModulesAccessApiService } from '../../../services/modules-access-api.se
 import { SessionService } from '../../../session/session.service';
 import { DbUsersService } from '../../../services/db-users.service';
 import { ModuleAccessEntry, ModuleAccessLevel, ModuleSummary, UserModuleAccess } from '../../../services/modules-access.types';
+import { CesIconComponent } from '../../../ui/ces-icon/ces-icon.component';
 
 /** One module grant held by a user, flattened so a per-user view can list
  *  grants from several modules together. */
@@ -34,7 +35,7 @@ interface ModuleUserGroup {
 @Component({
   selector: 'app-modules-access-panel',
   standalone: true,
-  imports: [FormsModule, SlicePipe],
+  imports: [CesIconComponent, FormsModule, SlicePipe],
   templateUrl: './modules-access-panel.component.html',
 })
 export class ModulesAccessPanelComponent implements OnInit {

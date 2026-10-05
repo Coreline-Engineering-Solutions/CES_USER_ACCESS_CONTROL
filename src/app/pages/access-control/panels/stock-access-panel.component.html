@@ -18,9 +18,7 @@
       <button class="btn" title="Register a new organisation (name + client database ID) in the real org directory." (click)="openCreateOrg()">+ Register org</button>
       <button class="btn" title="Create a warehouse, stockpile, or bootstock location for an organisation." (click)="openCreateLocation()">+ Add location</button>
       <button class="btn primary" title="Grant a user access to a specific location, a whole org, or the whole client." (click)="openGrant()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
+        <ces-icon name="plus" [size]="14" />
         Grant access
       </button>
     }
@@ -130,10 +128,7 @@
             }
           </div>
           <span class="ug-count">{{ grp.grants.length }}</span>
-          <svg class="ug-chev" [class.rotated]="isUserExpanded(grp.user_id)"
-               width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M9 18l6-6-6-6"/>
-          </svg>
+          <ces-icon name="chevron-right" [size]="14" class="ug-chev" [class.rotated]="isUserExpanded(grp.user_id)" />
         </button>
 
         @if (isUserExpanded(grp.user_id)) {

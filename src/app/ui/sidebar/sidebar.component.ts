@@ -3,6 +3,7 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
 import { inject } from '@angular/core';
 import { LayoutService } from '../../services/layout.service';
 import { cesAppUrl } from '../../ces-hosts';
+import { CesIconComponent } from '../ces-icon/ces-icon.component';
 
 /**
  * Left nav rail — mirrors CES_STOCK_MANAGER's sidebar (which itself mirrors
@@ -26,7 +27,7 @@ const ITEMS: NavItem[] = [
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive],
+  imports: [CesIconComponent, RouterLink, RouterLinkActive],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss',
 })
