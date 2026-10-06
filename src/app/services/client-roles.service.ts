@@ -1,6 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { RolesApiService } from './roles-api.service';
 import { ClientPrivilege, ClientRole, UserRoleAssignment } from './roles.types';
+import { countOrNull } from './role-counts';
 
 /**
  * CLIENT-LOCAL role management — the GIS API `/roles/*` surface, backed by
@@ -70,6 +71,8 @@ export class ClientRolesService {
         is_system: !!r.is_system,
         created_by: String(r.created_by ?? ''),
         created_date: String(r.created_date ?? ''),
+        privilege_count: countOrNull(r.privilege_count),
+        user_count: countOrNull(r.user_count),
       }))
       .sort((a, b) => a.role_name.localeCompare(b.role_name));
     this.roleCache = roles;

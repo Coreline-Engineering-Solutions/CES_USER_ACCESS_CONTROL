@@ -14,6 +14,7 @@ import {
   type StandardRoleName,
 } from './standard-role-bundles';
 import { ClientRole, UserRoleAssignment } from '../../services/roles.types';
+import { privilegeCountsFromList } from '../../services/role-counts';
 import { AccessProject, PROJECT_REGISTRY } from './project-registry';
 import { UserUtilitiesService, utilityKey } from '../../services/user-utilities.service';
 
@@ -151,12 +152,11 @@ export class AccessControlComponent implements OnInit {
    * role_gid -> number of privileges linked, so the roles table can tell two
    * rows of the same name apart.
    *
-   * This costs one request per role because `/roles/list` does not carry a
-   * count. That is a fan-out and I would rather not have written one — it is
-   * bounded (a tenant has a handful of roles, not hundreds), it only runs on
-   * the roles tab, and it is what makes Delete a safe decision instead of a
-   * coin toss. Asked tiaan to fold the count into `/roles/list`; when it
-   * lands this goes away.
+   * Current API builds put the count in `/roles/list` and it is read from
+   * there. Older builds do not, and then it costs one request per role
+   * (`loadRolePrivilegeCounts`) - a fan-out, bounded (a tenant has a handful
+   * of roles, not hundreds), only on the roles tab, and what makes Delete a
+   * safe decision instead of a coin toss.
    */
   readonly rolePrivilegeCounts = signal<Record<string, number>>({});
 
@@ -1021,7 +1021,11 @@ export class AccessControlComponent implements OnInit {
       const assignments = await this.clientRoles.listAssignments();
       this.roles.set(roles);
       this.rolesLoaded.set(true);
-      void this.loadRolePrivilegeCounts(roles);
+      // The list carries the counts on current API builds; older ones do not,
+      // and then each role is counted separately as before.
+      const listed = privilegeCountsFromList(roles);
+      if (listed) this.rolePrivilegeCounts.set(listed);
+      else void this.loadRolePrivilegeCounts(roles);
       this.privileges.set(privNames);
       this.assignments.set(assignments);
     } catch (err: any) {

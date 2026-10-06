@@ -10,6 +10,11 @@ export interface ClientRole {
   is_system: boolean;
   created_by: string;
   created_date: string;
+  /** Privileges linked to the role, as `/roles/list` reports them (gis_api V2.45.0+).
+   *  `null` when the API build does not send it - never 0 by default. */
+  privilege_count?: number | null;
+  /** Users holding the role, same source and same null rule. */
+  user_count?: number | null;
 }
 
 export interface RoleCreatePayload {
