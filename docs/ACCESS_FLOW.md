@@ -29,21 +29,35 @@ The three tools' own access:
 - **Admin Portal (CES staff only):** opens only for someone holding `_manage_client_roles` under GIS System. Pages: Users, Tools, Roles, Privileges, Databases, License.
 - **Client Portal:** Add user creates the user, links them to the active database and optionally gives a role. A manager can only link tools they hold themselves. **The Stock, Modules and GIS panels show only for tools the person is linked to**, System Managers included, the same rule as the dashboard.
 
-## What the self-governing manager needs
+## The System User Manager role
 
-| To do this | The person needs |
+One **generic role**, the same for every client. It is the only role that lets a client govern their own group, and nobody else holds those privileges (Manager, Planner and Viewer do not).
+
+It lets the client's system manager:
+- **add their own users** (create the person, link them to the client's database, give them a role)
+- **create roles** and choose what each role may do
+- **see their users and manage them** (change or remove a role, link or remove tools they hold themselves)
+- **give people access inside** Stock, Modules and GIS, for the tools they are linked to
+
+What the role needs to do that:
+
+| To do this | The role needs |
 |---|---|
-| Add users and roles, change role privileges | `_manage_client_roles` |
+| Add users, create roles, see and manage users | `_manage_client_roles` |
 | Give people Stock access | `_stock_admin` |
-| Give people Modules access | manager of that module, or System Manager |
+| Give people Modules access | System Manager (`_list_user_projects`), or manager of that module |
 | Give people GIS access | GIS System Manager |
 
-Warning: the standard Manager role is defined to **leave out** `_manage_client_roles` and `_stock_admin` (decided 28 Sep, to be applied after a per-person audit). On QA, Manager still holds every privilege, so it works today. The system-manager role for a client must therefore include those two explicitly.
+The standard Manager role is defined to leave out `_manage_client_roles` and `_stock_admin` (decided 28 Sep). That keeps them in this one role and out of everything else. On QA, Manager still holds every privilege today.
 
-## Notes for production
+## Keeping clients out of the Admin Portal
 
-- Many production users are linked to the `Access_Control` tool with the `basic` role. That link only gives database context. It does **not** open the Admin Portal. The Admin Portal gate is the privilege above, and it is already live on `main` for both the dashboard tile and the portal itself (commit `dbed074`, 24 Sep).
-- "System Manager" is not a role name. It is a test: holding `_list_user_projects`. The standard Viewer role also contains that privilege, which could wrongly make Viewers System Managers. This is undecided.
+`_manage_client_roles` is also what the Admin Portal used to check, so on its own it would let a client's system manager into our staff tool, which lists every client, database and licence. The Admin Portal therefore has **two locks, both must open**:
+
+1. the privilege `_manage_client_roles`, and
+2. a **non-`basic` role on the `Access_Control` tool**.
+
+Every client user holds `Access_Control` with the `basic` role for database context, and many production users still do. Only CES staff hold anything else. So `basic` alone never opens the Admin Portal, whatever privileges the person has. This applies to both the dashboard tile (CES_WEB) and the portal itself.
 
 ## Where it is only on the screen
 
