@@ -17,6 +17,7 @@ import { ClientRole, UserRoleAssignment } from '../../services/roles.types';
 import { privilegeCountsFromList } from '../../services/role-counts';
 import { AccessProject, PROJECT_REGISTRY } from './project-registry';
 import { UserUtilitiesService, utilityKey } from '../../services/user-utilities.service';
+import { visibleProjects } from './visible-projects';
 
 /**
  * Tab order mirrors how the page is actually used: assign the user first,
@@ -83,14 +84,18 @@ export class AccessControlComponent implements OnInit {
 
   // ─── Projects (dynamic — see project-registry.ts) ───────────────────────
   /**
-   * Only the toolsets this manager actually holds.
+   * Only the tools this person is linked to - the same rule as the CES_WEB
+   * dashboard. Each tool keeps its own access: someone linked to Stock sees
+   * the Stock panel and can give people Stock roles there; the same for
+   * Modules and GIS. A tool they are not linked to is not shown at all,
+   * System Managers included (being a System Manager does not link you to a
+   * tool, it only widens what you may do inside the tools you are linked to).
    *
    * Every panel used to render for every user, so a manager with only Modules
    * still saw Stock Manager and GIS Projects tabs. The grant buttons inside
    * were disabled and the API refused the calls, but the surface was visible —
    * which leaks which systems exist and reads as a broken tool rather than as
-   * "not yours". System Managers keep the full list, matching the bypass they
-   * get everywhere else.
+   * "not yours".
    *
    * Returns [] while the session is still resolving. accessList and
    * isSystemManager are both populated by validate(), so filtering before it
@@ -99,14 +104,7 @@ export class AccessControlComponent implements OnInit {
    */
   readonly projects = computed<AccessProject[]>(() => {
     if (this.session.loading()) return [];
-    if (this.session.isSystemManager()) return PROJECT_REGISTRY;
-
-    const mine = new Set(
-      (this.session.accessList() ?? [])
-        .map((e: any) => utilityKey(typeof e === 'string' ? e : e?.utility_name ?? e?.name))
-        .filter(Boolean),
-    );
-    return PROJECT_REGISTRY.filter((p) => mine.has(utilityKey(p.utility)));
+    return visibleProjects(PROJECT_REGISTRY, this.session.accessList());
   });
 
   /** True once we know the answer and it is "none" — lets the template explain

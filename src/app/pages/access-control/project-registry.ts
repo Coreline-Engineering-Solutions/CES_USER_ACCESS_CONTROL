@@ -26,9 +26,9 @@ export interface AccessProject {
   component: Type<unknown>;
   /**
    * The CES_WEB utility this panel administers. The shell shows a panel only
-   * when the signed-in manager holds this utility themselves (System Managers
-   * see everything) — a manager should not be handed the administration
-   * surface for a tool their company does not run.
+   * when the signed-in person is linked to this utility themselves, System
+   * Managers included - nobody is handed the administration surface for a
+   * tool they are not linked to (see visible-projects.ts).
    *
    * These strings are compared NORMALISED (underscores/spacing/case ignored),
    * so 'Manager Portal' also matches 'manager_portal'.
@@ -52,8 +52,7 @@ export const PROJECT_REGISTRY: AccessProject[] = [
     // Confirmed with gustav 2026-09-10: CES_MODULES is its own utility,
     // 'Modules' (gid 410748cb-f469-41f6-86f8-8b33e23b7f5e). 'Manager Portal'
     // and 'Project Portal' are projects that have not been started, so this
-    // panel was gated on a utility nobody can hold — only System Managers,
-    // who bypass the check, ever saw it.
+    // panel used to be gated on a utility nobody can hold.
     utility: 'Modules',
   },
   {
