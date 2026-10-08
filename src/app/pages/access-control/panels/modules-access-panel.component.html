@@ -148,7 +148,11 @@
   <div class="scrim on" role="dialog" aria-modal="true" aria-label="Give a user access to several modules">
     <div class="modal" style="width:480px">
       <div class="m-h">
-        <h3>Give access to {{ bulkCount() }} module{{ bulkCount() === 1 ? '' : 's' }}</h3>
+        @if (bulkResult(); as r) {
+          <h3>{{ r.failed.length === 0 ? 'Access given' : 'Some modules did not take' }}</h3>
+        } @else {
+          <h3>Give access to {{ bulkCount() }} module{{ bulkCount() === 1 ? '' : 's' }}</h3>
+        }
         <button class="x" (click)="closeBulk()" [disabled]="bulkRunning()" aria-label="Close">✕</button>
       </div>
       <div class="m-sec">
@@ -189,9 +193,11 @@
       </div>
       <div class="m-f">
         <button class="btn" (click)="closeBulk()" [disabled]="bulkRunning()">{{ bulkResult() ? 'Close' : 'Cancel' }}</button>
-        <button class="btn primary" style="margin-left:auto" [disabled]="bulkRunning() || bulkCount() === 0" (click)="submitBulk()">
-          {{ bulkRunning() ? 'Granting ' + bulkDone() + ' of ' + bulkCount() + '…' : (bulkResult() ? 'Try the rest again' : 'Give access') }}
-        </button>
+        @if (bulkRunning() || bulkCount() > 0) {
+          <button class="btn primary" style="margin-left:auto" [disabled]="bulkRunning()" (click)="submitBulk()">
+            {{ bulkRunning() ? 'Granting ' + bulkDone() + ' of ' + bulkCount() + '…' : (bulkResult() ? 'Try the rest again' : 'Give access') }}
+          </button>
+        }
       </div>
     </div>
   </div>
