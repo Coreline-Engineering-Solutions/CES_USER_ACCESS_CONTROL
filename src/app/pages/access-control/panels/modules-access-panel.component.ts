@@ -6,6 +6,7 @@ import { SessionService } from '../../../session/session.service';
 import { DbUsersService } from '../../../services/db-users.service';
 import { ModuleAccessEntry, ModuleAccessLevel, ModuleSummary, UserModuleAccess } from '../../../services/modules-access.types';
 import { CesIconComponent } from '../../../ui/ces-icon/ces-icon.component';
+import { bulkFailureReason, runBulkGrant } from './bulk-grant';
 
 /** One module grant held by a user, flattened so a per-user view can list
  *  grants from several modules together. */
@@ -239,6 +240,107 @@ export class ModulesAccessPanelComponent implements OnInit {
       }
     } finally {
       this.moduleGranting.set(false);
+    }
+  }
+
+  // --- Grant several modules at once ---------------------------------------
+  // Tick modules on the cards, pick the person and the role once, and one
+  // action gives them all. Before this, every module meant opening it,
+  // opening the grant box, picking the same person and role again.
+  readonly bulkModuleGids = signal<ReadonlySet<string>>(new Set());
+  readonly showBulkModal = signal(false);
+  readonly bulkEmail = signal('');
+  readonly bulkLevel = signal<ModuleAccessLevel>('contributor');
+  readonly bulkRunning = signal(false);
+  readonly bulkDone = signal(0);
+  readonly bulkError = signal<string | null>(null);
+  readonly bulkResult = signal<{ granted: number; failed: { name: string; reason: string }[] } | null>(null);
+
+  /** Modules this admin can tick: only the ones they may grant on. */
+  readonly bulkEligible = computed(() => this.filteredModules().filter((m) => this.canManageModule(m.module_gid)));
+  readonly bulkCount = computed(() => this.bulkModuleGids().size);
+  readonly bulkAllTicked = computed(() => {
+    const eligible = this.bulkEligible();
+    const ticked = this.bulkModuleGids();
+    return eligible.length > 0 && eligible.every((m) => ticked.has(m.module_gid));
+  });
+
+  isBulkTicked(gid: string): boolean {
+    return this.bulkModuleGids().has(gid);
+  }
+
+  toggleBulk(gid: string): void {
+    this.bulkModuleGids.update((s) => {
+      const next = new Set(s);
+      if (next.has(gid)) next.delete(gid);
+      else next.add(gid);
+      return next;
+    });
+  }
+
+  /** Tick or untick every module currently shown that this admin can manage. */
+  toggleAllBulk(): void {
+    const eligible = this.bulkEligible().map((m) => m.module_gid);
+    this.bulkModuleGids.update((s) => {
+      const next = new Set(s);
+      if (this.bulkAllTicked()) eligible.forEach((g) => next.delete(g));
+      else eligible.forEach((g) => next.add(g));
+      return next;
+    });
+  }
+
+  clearBulk(): void {
+    this.bulkModuleGids.set(new Set());
+  }
+
+  openBulk(): void {
+    this.bulkEmail.set('');
+    this.bulkLevel.set('contributor');
+    this.bulkError.set(null);
+    this.bulkResult.set(null);
+    this.bulkDone.set(0);
+    this.showBulkModal.set(true);
+  }
+
+  closeBulk(): void {
+    if (this.bulkRunning()) return;
+    this.showBulkModal.set(false);
+  }
+
+  async submitBulk(): Promise<void> {
+    const email = this.bulkEmail().trim();
+    const gids = Array.from(this.bulkModuleGids());
+    if (gids.length === 0) {
+      this.bulkError.set('Tick at least one module.');
+      return;
+    }
+    if (!email) {
+      this.bulkError.set('Pick a user.');
+      return;
+    }
+    this.bulkRunning.set(true);
+    this.bulkError.set(null);
+    this.bulkResult.set(null);
+    this.bulkDone.set(0);
+    const level = this.bulkLevel();
+    try {
+      const outcomes = await runBulkGrant(
+        gids,
+        (gid) => this.modulesAccess.accessGrant(gid, email, level),
+        4,
+        (done) => this.bulkDone.set(done),
+      );
+      const failed = outcomes
+        .filter((o) => !o.ok)
+        .map((o) => ({ name: this.moduleName(o.module_gid), reason: bulkFailureReason(o, email) }));
+      this.bulkResult.set({ granted: outcomes.length - failed.length, failed });
+      // Leave the failures ticked so "Grant" can be pressed again for just those.
+      this.bulkModuleGids.set(new Set(outcomes.filter((o) => !o.ok).map((o) => o.module_gid)));
+      void this.loadAllGrants();
+      const open = this.selectedModuleGid();
+      if (open) void this.selectModule(open);
+    } finally {
+      this.bulkRunning.set(false);
     }
   }
 

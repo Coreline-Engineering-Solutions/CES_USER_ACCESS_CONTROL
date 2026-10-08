@@ -46,12 +46,38 @@
     }
   </div>
 
+  @if (bulkEligible().length > 0) {
+    <div class="filterbar" style="align-items:center;gap:10px">
+      <label class="bulk-all" style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+        <input type="checkbox" [checked]="bulkAllTicked()" (change)="toggleAllBulk()">
+        Select all I manage ({{ bulkEligible().length }})
+      </label>
+      @if (bulkCount() > 0) {
+        <span style="color:var(--gc-text-muted);font-size:12.5px">{{ bulkCount() }} selected</span>
+        <button class="btn" (click)="clearBulk()">Clear</button>
+        <button class="btn primary" style="margin-left:auto" (click)="openBulk()">
+          Give one user access to {{ bulkCount() }} module{{ bulkCount() === 1 ? '' : 's' }}
+        </button>
+      } @else {
+        <span style="color:var(--gc-text-muted);font-size:12px">Tick modules to give one person access to all of them in one go.</span>
+      }
+    </div>
+  }
+
   <div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr));padding-top:10px">
     @for (m of filteredModules(); track m.module_gid) {
       <div class="lcard" [class.on]="selectedModuleGid() === m.module_gid" style="cursor:pointer"
            title="View this module's grants"
            (click)="selectModule(m.module_gid)">
         <div class="lcard-h">
+          @if (canManageModule(m.module_gid)) {
+            <input type="checkbox" style="margin-right:10px;flex:none"
+                   [checked]="isBulkTicked(m.module_gid)"
+                   [attr.aria-label]="'Select ' + m.description"
+                   title="Select to give a user access to several modules at once"
+                   (click)="$event.stopPropagation()"
+                   (change)="toggleBulk(m.module_gid)">
+          }
           <div>
             <h3>{{ m.description }}</h3>
             @if (canManageModule(m.module_gid)) {
@@ -115,6 +141,60 @@
   } @else if (filteredModules().length > 0) {
     <div style="padding:16px 18px;color:var(--gc-text-muted);font-size:12.5px">Pick a module above to see and manage its grants.</div>
   }
+}
+
+<!-- Grant several modules to one user -->
+@if (showBulkModal()) {
+  <div class="scrim on" role="dialog" aria-modal="true" aria-label="Give a user access to several modules">
+    <div class="modal" style="width:480px">
+      <div class="m-h">
+        <h3>Give access to {{ bulkCount() }} module{{ bulkCount() === 1 ? '' : 's' }}</h3>
+        <button class="x" (click)="closeBulk()" [disabled]="bulkRunning()" aria-label="Close">✕</button>
+      </div>
+      <div class="m-sec">
+        @if (bulkError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ bulkError() }}</span></div> }
+        @if (bulkResult(); as r) {
+          <div class="hiernote" style="margin:0 0 12px">
+            <span class="i">i</span>
+            <span>Access given on {{ r.granted }} module{{ r.granted === 1 ? '' : 's' }}@if (r.failed.length > 0) {; {{ r.failed.length }} did not take. They stay ticked, so you can try again.}</span>
+          </div>
+          @if (r.failed.length > 0) {
+            <ul style="margin:0 0 12px;padding-left:18px;font-size:12px;color:var(--gc-text-muted)">
+              @for (f of r.failed; track f.name) { <li><strong>{{ f.name }}</strong> - {{ f.reason }}</li> }
+            </ul>
+          }
+        }
+        <div class="field">
+          <label>User</label>
+          @if (dbUsers.users().length > 0) {
+            <select class="sel" [ngModel]="bulkEmail()" (ngModelChange)="bulkEmail.set($event)" [disabled]="bulkRunning()">
+              <option value="">— select a user —</option>
+              @for (u of dbUsers.users(); track u.email) { <option [value]="u.email">{{ u.email }}</option> }
+            </select>
+          } @else {
+            <input class="inp" [ngModel]="bulkEmail()" (ngModelChange)="bulkEmail.set($event)" [disabled]="bulkRunning()" placeholder="user@example.com">
+          }
+        </div>
+        <div class="field">
+          <label>Role on every selected module</label>
+          <div class="urgency-toggle">
+            <button type="button" [class.on]="bulkLevel() === 'manager'" (click)="bulkLevel.set('manager')" [disabled]="bulkRunning()">Manager</button>
+            <button type="button" [class.on]="bulkLevel() === 'contributor'" (click)="bulkLevel.set('contributor')" [disabled]="bulkRunning()">Contributor</button>
+            <button type="button" [class.on]="bulkLevel() === 'viewer'" (click)="bulkLevel.set('viewer')" [disabled]="bulkRunning()">Viewer</button>
+          </div>
+        </div>
+        <p style="color:var(--gc-text-muted);font-size:11.5px;margin:8px 0 0">
+          A module they already have is updated to this role. Nothing is removed.
+        </p>
+      </div>
+      <div class="m-f">
+        <button class="btn" (click)="closeBulk()" [disabled]="bulkRunning()">{{ bulkResult() ? 'Close' : 'Cancel' }}</button>
+        <button class="btn primary" style="margin-left:auto" [disabled]="bulkRunning() || bulkCount() === 0" (click)="submitBulk()">
+          {{ bulkRunning() ? 'Granting ' + bulkDone() + ' of ' + bulkCount() + '…' : (bulkResult() ? 'Try the rest again' : 'Give access') }}
+        </button>
+      </div>
+    </div>
+  </div>
 }
 
 <!-- Grant module access -->
