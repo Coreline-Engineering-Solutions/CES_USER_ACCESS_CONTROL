@@ -15,6 +15,7 @@ import {
 } from './standard-role-bundles';
 import { ClientRole, UserRoleAssignment } from '../../services/roles.types';
 import { privilegeCountsFromList } from '../../services/role-counts';
+import { HeldBaseRole, baseRolesByPerson, describeHeldBaseRoles, isBaseRole, otherBaseRoles } from '../../services/base-roles';
 import { AccessProject, PROJECT_REGISTRY } from './project-registry';
 import { UserUtilitiesService, utilityKey } from '../../services/user-utilities.service';
 import { visibleProjects } from './visible-projects';
@@ -934,6 +935,24 @@ export class AccessControlComponent implements OnInit {
     }
   }
 
+  /** The other base roles (Manager / Planner / Viewer) `email` holds besides `targetRoleGid`; assigning the target moves them off these. */
+  private baseRolesToDrop(email: string, targetRoleGid: string): HeldBaseRole[] {
+    const key = String(email ?? '').trim().toLowerCase();
+    const row = this.userRows().find((r) => String(r.email ?? '').toLowerCase() === key);
+    if (!row) return [];
+    const held = baseRolesByPerson(row.roles, this.roles(), () => key);
+    return otherBaseRoles(held, key, targetRoleGid);
+  }
+
+  /** Shown in the assign dialog when the chosen role would move the person off another base role. */
+  readonly assignMoveNote = computed(() => {
+    const target = this.roles().find((r) => r.role_gid === this.assignRoleGid());
+    const email = this.assignEmail();
+    if (!target || !email || !isBaseRole(target)) return '';
+    const old = this.baseRolesToDrop(email, target.role_gid);
+    return old.length > 0 ? `${email} is currently ${describeHeldBaseRoles(old)}. Assigning ${target.role_name} moves them: ${describeHeldBaseRoles(old)} is removed.` : '';
+  });
+
   /**
    * Opens the assign-role modal for one user. Used to only pre-fill the
    * form ABOVE the table - off-screen for anyone scrolled down to the row,
@@ -1137,12 +1156,21 @@ export class AccessControlComponent implements OnInit {
     try {
       const target = this.roles().find((r) => r.role_gid === this.assignRoleGid());
       if (!target) throw new Error('That role is no longer on this database.');
+      // Manager / Planner / Viewer: one per person, so this is a move. Grant the
+      // new role first, then drop the old one(s), so nobody is left without.
+      const old = this.baseRolesToDrop(email, target.role_gid);
       if (!(await this.clientRoles.assignUserRole(email, target))) {
         throw new Error('The API did not confirm the role assignment.');
       }
+      for (const o of old) await this.clientRoles.removeUserRole(email, o.role_gid);
       this.assignEmail.set('');
       this.assignModalOpen.set(false);
       await this.load();
+      // Judge the move by what the server says now, not by the revoke calls.
+      const stillHeld = this.baseRolesToDrop(email, target.role_gid);
+      if (stillHeld.length > 0) {
+        this.error.set(`${email} now has ${target.role_name} but still holds ${describeHeldBaseRoles(stillHeld)}. Remove it with the ✕ on their row.`);
+      }
     } catch (err: any) {
       console.error('[AccessControl] user role assign failed:', err);
       this.assignError.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to assign role');

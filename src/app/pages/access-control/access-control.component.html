@@ -543,6 +543,9 @@
             @for (r of roles(); track r.role_gid) { <option [value]="r.role_gid">{{ r.role_name }}</option> }
           </select>
         </div>
+        @if (assignMoveNote(); as note) {
+          <div class="hiernote warn" style="margin-top:10px"><span class="i">!</span><span>{{ note }}</span></div>
+        }
         <p style="color:var(--gc-text-muted);font-size:12px;margin-top:10px">
           Written to the central auth role and to this database's client-local role of the same name.
         </p>
