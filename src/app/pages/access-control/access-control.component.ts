@@ -1156,13 +1156,28 @@ export class AccessControlComponent implements OnInit {
     try {
       const target = this.roles().find((r) => r.role_gid === this.assignRoleGid());
       if (!target) throw new Error('That role is no longer on this database.');
-      // Manager / Planner / Viewer: one per person, so this is a move. Grant the
-      // new role first, then drop the old one(s), so nobody is left without.
+      // Manager / Planner / Viewer: one per person, so this is a move. The server
+      // refuses a second base role (409 BASE_ROLE_CONFLICT), so the old one(s) go
+      // first and are put back if the new one cannot be granted.
       const old = this.baseRolesToDrop(email, target.role_gid);
-      if (!(await this.clientRoles.assignUserRole(email, target))) {
-        throw new Error('The API did not confirm the role assignment.');
+      const revoked: HeldBaseRole[] = [];
+      for (const o of old) {
+        if (await this.clientRoles.removeUserRole(email, o.role_gid)) revoked.push(o);
       }
-      for (const o of old) await this.clientRoles.removeUserRole(email, o.role_gid);
+      const restore = async () => {
+        for (const o of revoked) {
+          const role = this.roles().find((r) => r.role_gid === o.role_gid);
+          if (role) await this.clientRoles.assignUserRole(email, role);
+        }
+      };
+      if (revoked.length < old.length) {
+        await restore();
+        throw new Error('Could not remove their current base role, so nothing was changed.');
+      }
+      if (!(await this.clientRoles.assignUserRole(email, target))) {
+        await restore();
+        throw new Error('The API did not confirm the role assignment. Their previous role was put back.');
+      }
       this.assignEmail.set('');
       this.assignModalOpen.set(false);
       await this.load();
