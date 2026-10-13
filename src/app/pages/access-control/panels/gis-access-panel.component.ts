@@ -4,6 +4,13 @@ import { GisAccessApiService } from '../../../services/gis-access-api.service';
 import { SessionService } from '../../../session/session.service';
 import { DbUsersService } from '../../../services/db-users.service';
 import { GisProject } from '../../../services/gis-access.types';
+import {
+  PersonOutcome,
+  bulkSummary,
+  failedEmails,
+  personFailureReason,
+  runBulkProjectAssign,
+} from './bulk-project-assign';
 
 /**
  * Self-contained access panel for GIS project membership — one entry in
@@ -154,6 +161,133 @@ export class GisAccessPanelComponent implements OnInit {
       this.assignError.set(err?.response?.data?.detail ?? err?.message ?? 'Failed to assign');
     } finally {
       this.assigning.set(false);
+    }
+  }
+
+  // ─── Bulk: several people, several projects, one go ─────────────────────
+  // The single-person flow above means a lookup, a picker and a check per
+  // person. This ticks people and projects in one dialog and sends one
+  // assign call per person, a few at a time (see bulk-project-assign.ts).
+  readonly showBulkModal = signal(false);
+  readonly bulkUsers = signal<Set<string>>(new Set());
+  readonly bulkProjects = signal<Set<string>>(new Set());
+  readonly bulkUserFilter = signal('');
+  readonly bulkProjectFilter = signal('');
+  readonly bulkRunning = signal(false);
+  readonly bulkProgress = signal<{ done: number; total: number } | null>(null);
+  readonly bulkOutcomes = signal<PersonOutcome[] | null>(null);
+  /** The projects of the run being shown, so a retry sends the same ones. */
+  private bulkRunProjects: string[] = [];
+
+  readonly bulkFilteredUsers = computed(() => {
+    const q = this.bulkUserFilter().trim().toLowerCase();
+    const all = this.dbUsers.users().map((u) => u.email);
+    return q ? all.filter((e) => e.toLowerCase().includes(q)) : all;
+  });
+  readonly bulkFilteredProjects = computed(() => {
+    const q = this.bulkProjectFilter().trim().toLowerCase();
+    const all = this.allProjects();
+    return q ? all.filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)) : all;
+  });
+  readonly bulkSummaryText = computed(() => {
+    const o = this.bulkOutcomes();
+    return o ? bulkSummary(o, this.bulkRunProjects.length) : '';
+  });
+  readonly bulkFailures = computed(() => (this.bulkOutcomes() ?? []).filter((o) => !o.ok));
+  readonly bulkMissing = computed(() => {
+    const names = new Set<string>();
+    for (const o of this.bulkOutcomes() ?? []) for (const m of o.missing) names.add(m);
+    return Array.from(names);
+  });
+  readonly bulkCanRun = computed(
+    () => !this.bulkRunning() && this.bulkUsers().size > 0 && this.bulkProjects().size > 0,
+  );
+  failureReason = personFailureReason;
+
+  openBulkModal(): void {
+    this.bulkUsers.set(new Set());
+    this.bulkProjects.set(new Set());
+    this.bulkUserFilter.set('');
+    this.bulkProjectFilter.set('');
+    this.bulkOutcomes.set(null);
+    this.bulkProgress.set(null);
+    this.showBulkModal.set(true);
+  }
+
+  closeBulkModal(): void {
+    if (this.bulkRunning()) return;
+    this.showBulkModal.set(false);
+  }
+
+  toggleBulkUser(email: string): void {
+    this.bulkUsers.update((s) => {
+      const next = new Set(s);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
+  }
+
+  toggleBulkProject(name: string): void {
+    this.bulkProjects.update((s) => {
+      const next = new Set(s);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  /** Tick or untick everyone who matches the filter. */
+  setAllBulkUsers(on: boolean): void {
+    this.bulkUsers.update((s) => {
+      const next = new Set(s);
+      for (const e of this.bulkFilteredUsers()) (on ? next.add(e) : next.delete(e));
+      return next;
+    });
+  }
+
+  setAllBulkProjects(on: boolean): void {
+    this.bulkProjects.update((s) => {
+      const next = new Set(s);
+      for (const p of this.bulkFilteredProjects()) (on ? next.add(p.name) : next.delete(p.name));
+      return next;
+    });
+  }
+
+  async runBulk(): Promise<void> {
+    if (!this.bulkCanRun()) return;
+    this.bulkRunProjects = Array.from(this.bulkProjects());
+    await this.runBulkFor(Array.from(this.bulkUsers()));
+  }
+
+  /** Send only the people whose call failed, keeping the ones that worked. */
+  async retryBulkFailures(): Promise<void> {
+    const retry = failedEmails(this.bulkOutcomes() ?? []);
+    if (!retry.length || this.bulkRunning()) return;
+    const kept = (this.bulkOutcomes() ?? []).filter((o) => o.ok);
+    await this.runBulkFor(retry, kept);
+  }
+
+  private async runBulkFor(emails: string[], kept: PersonOutcome[] = []): Promise<void> {
+    this.bulkRunning.set(true);
+    this.bulkProgress.set({ done: 0, total: emails.length });
+    try {
+      const outcomes = await runBulkProjectAssign(
+        emails,
+        this.bulkRunProjects,
+        (email, names) => this.api.assignProjects(email, names),
+        4,
+        (done, total) => this.bulkProgress.set({ done, total }),
+      );
+      this.bulkOutcomes.set([...kept, ...outcomes]);
+      // If the person currently looked up was in the run, show their new list.
+      const active = this.activeEmail();
+      if (active && emails.includes(active)) {
+        try { this.userProjects.set(await this.api.userProjects(active)); } catch { /* the lookup panel shows its own error on refresh */ }
+      }
+    } finally {
+      this.bulkRunning.set(false);
+      this.bulkProgress.set(null);
     }
   }
 
