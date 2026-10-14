@@ -1,5 +1,11 @@
 <nav class="navbar">
   <div class="brand">
+    @if (layout.narrow()) {
+      <button type="button" class="menu-btn" (click)="layout.toggleDrawer()"
+        aria-label="Open navigation" title="Open navigation" [attr.aria-expanded]="layout.drawerOpen()">
+        <ces-icon name="menu" [size]="20" />
+      </button>
+    }
     <span class="title">CES Client Portal</span>
   </div>
   <div class="right">

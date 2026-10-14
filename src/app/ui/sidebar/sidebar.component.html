@@ -1,26 +1,41 @@
-<aside class="sidebar" [class.collapsed]="layout.sidebarCollapsed()">
+@if (layout.narrow() && layout.drawerOpen()) {
+  <div class="sidebar-backdrop" (click)="layout.closeDrawer()"></div>
+}
+<aside
+  class="sidebar"
+  [class.collapsed]="layout.compact()"
+  [class.drawer]="layout.narrow()"
+  [class.drawer-open]="layout.drawerOpen()"
+  [attr.aria-hidden]="layout.narrow() && !layout.drawerOpen() ? true : null"
+>
   <div class="sidebar-toolbar">
-    @if (!layout.sidebarCollapsed()) {
+    @if (!layout.compact()) {
       <div class="brand">
         <img src="/assets/CESLogoWhite.png" alt="CES" class="brand-logo" />
         <span class="brand-name">Client Portal</span>
       </div>
     }
 
-    <button
-      type="button"
-      class="collapse-toggle"
-      (click)="layout.toggleSidebar()"
-      [title]="layout.sidebarCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
-      [attr.aria-expanded]="!layout.sidebarCollapsed()"
-      aria-label="Toggle sidebar"
-    >
-      <ces-icon [name]="layout.sidebarCollapsed() ? 'chevron-right' : 'chevron-left'" [size]="16" />
-    </button>
+    @if (layout.narrow()) {
+      <button type="button" class="collapse-toggle" (click)="layout.closeDrawer()" aria-label="Close navigation" title="Close navigation">
+        <ces-icon name="x" [size]="18" />
+      </button>
+    } @else {
+      <button
+        type="button"
+        class="collapse-toggle"
+        (click)="layout.toggleSidebar()"
+        [title]="layout.compact() ? 'Expand sidebar' : 'Collapse sidebar'"
+        [attr.aria-expanded]="!layout.compact()"
+        aria-label="Toggle sidebar"
+      >
+        <ces-icon [name]="layout.compact() ? 'chevron-right' : 'chevron-left'" [size]="16" />
+      </button>
+    }
   </div>
 
   <nav class="sidebar-body">
-    @if (!layout.sidebarCollapsed()) {
+    @if (!layout.compact()) {
       <h2 class="nav-group-label">Your company</h2>
     }
 
@@ -30,7 +45,8 @@
         [routerLink]="item.route"
         routerLinkActive="active"
         [routerLinkActiveOptions]="{ exact: item.route === '/' }"
-        [title]="layout.sidebarCollapsed() ? item.label : ''"
+        [title]="layout.compact() ? item.label : ''"
+        (click)="layout.closeDrawer()"
       >
         <span class="nav-icon">
           @switch (item.icon) {
@@ -42,7 +58,7 @@
             }
           }
         </span>
-        @if (!layout.sidebarCollapsed()) {
+        @if (!layout.compact()) {
           <span class="nav-label">{{ item.label }}</span>
         }
       </a>
@@ -52,7 +68,7 @@
   <!-- Platform-wide administration is the other portal. Shown to everyone:
        a client admin who lands here looking for "create a user on another
        database" needs to be told where that lives, not left to guess. -->
-  @if (!layout.sidebarCollapsed()) {
+  @if (!layout.compact()) {
     <div class="sidebar-foot">
       <div class="sidebar-foot__label">Looking for</div>
       <a class="sidebar-foot__link" [href]="adminPortalUrl" target="_blank" rel="noopener">

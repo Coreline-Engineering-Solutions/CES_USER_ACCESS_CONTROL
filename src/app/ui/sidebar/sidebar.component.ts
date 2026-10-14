@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, HostListener } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { inject } from '@angular/core';
 import { LayoutService } from '../../services/layout.service';
@@ -37,4 +37,9 @@ export class SidebarComponent {
 
   readonly layout = inject(LayoutService);
   readonly items = ITEMS;
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.layout.drawerOpen()) this.layout.closeDrawer();
+  }
 }

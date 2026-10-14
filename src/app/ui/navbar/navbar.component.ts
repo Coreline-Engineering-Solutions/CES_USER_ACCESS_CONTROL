@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { SessionService } from '../../session/session.service';
 import { cesAppUrl } from '../../ces-hosts';
 import { CesIconComponent } from '../ces-icon/ces-icon.component';
+import { LayoutService } from '../../services/layout.service';
 
 @Component({
   selector: 'app-navbar',
@@ -15,6 +16,7 @@ export class NavbarComponent implements OnInit {
   hubUrl(path: string): string { return cesAppUrl('hub', path); }
 
   readonly session = inject(SessionService);
+  readonly layout = inject(LayoutService);
 
   readonly showProfileMenu = signal(false);
 

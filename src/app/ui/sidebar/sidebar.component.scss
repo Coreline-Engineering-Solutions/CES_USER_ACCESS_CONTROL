@@ -157,12 +157,30 @@
   text-overflow: ellipsis;
 }
 
-// Narrow viewports — sidebar collapses automatically on mobile.
-@media (max-width: 720px) {
-  .sidebar { width: 64px; }
-  .sidebar .brand-name,
-  .sidebar .nav-label { display: none; }
-  .sidebar .nav-item { justify-content: center; padding: 8px; }
+// Tablet and phone: the sidebar is a drawer over the page, closed until the
+// menu button opens it. Closed it is off screen and out of the tab order;
+// open it slides in with its labels. (It used to squeeze into a 64px strip
+// that took a fifth of a phone's width.)
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 11, 26, 0.6);
+  z-index: 390;
+}
+
+.sidebar.drawer {
+  width: min(280px, 86vw);
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  z-index: 400;
+
+  &.drawer-open {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 0.2s ease;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+  }
 }
 
 /* Cross-link to the other portal — answers "which app do I use" in place. */
