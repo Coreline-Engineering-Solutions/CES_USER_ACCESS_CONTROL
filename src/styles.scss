@@ -254,27 +254,31 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
    body text over a gradient was the main thing making them hard to read. */
 .tablewrap {
   flex: 1; overflow: auto; margin: 14px 18px 20px;
-  background: var(--gc-surface-1); border: 1px solid var(--gc-border); border-radius: 12px;
+  background: var(--gc-surface-1); border: 1px solid rgba(148, 163, 184, 0.4); border-radius: 12px;
 }
-table { width: 100%; border-collapse: collapse; }
+table { width: 100%; border-collapse: separate; border-spacing: 0; }
 /* On a wide monitor `width: 100%` spreads the slack evenly, so a cell holding
    "2,000" ends up ~180px and the eye has to travel between values. Giving the
    last column all the slack sizes the rest to their content instead. */
 th:last-child, td:last-child { width: 100%; }
+/* Every row and column is drawn: a header strip that stands apart, a line under
+   each row and a fainter line between columns, so a table reads as a table. */
 th {
-  position: sticky; top: 0; background: var(--gc-surface-2); text-align: left; font-size: 11px;
-  letter-spacing: 0.06em; text-transform: uppercase; color: var(--gc-text-muted); font-weight: 600;
-  padding: 11px 16px; border-bottom: 1px solid var(--gc-border); white-space: nowrap; z-index: 2;
+  position: sticky; top: 0; background: #11275a; text-align: left; font-size: 12px;
+  letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255, 255, 255, 0.92); font-weight: 700;
+  padding: 12px 16px; white-space: nowrap; z-index: 2;
+  border-bottom: 2px solid rgba(37, 99, 235, 0.75); border-right: 1px solid rgba(148, 163, 184, 0.2);
 }
 /* Full-strength text: --gc-text-muted is for labels and captions, not row content. */
 td {
-  padding: 11px 16px; border-bottom: 1px solid rgba(209, 213, 219, 0.07);
-  font-size: 13px; color: var(--gc-text); white-space: nowrap; vertical-align: middle;
+  padding: 12px 16px; border-bottom: 1px solid rgba(148, 163, 184, 0.24); border-right: 1px solid rgba(148, 163, 184, 0.13);
+  font-size: 14px; color: var(--gc-text); white-space: nowrap; vertical-align: middle;
 }
+th:last-child, td:last-child { border-right: none; }
 td.num { font-variant-numeric: tabular-nums; }
-tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.018); }
+tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.04); }
 tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover td { background: rgba(37, 99, 235, 0.09); }
+tbody tr:hover td { background: rgba(37, 99, 235, 0.17); }
 /* Action buttons shouldn't inflate row height. */
 td .btn { padding: 5px 11px; font-size: 12px; }
 /* An action column is normally last, so it absorbs the table's slack (see the
