@@ -57,6 +57,9 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
    ============================================================ */
 
 .panel { display: flex; flex-direction: column; min-height: 0; }
+/* On a big monitor the page is a centred column, not an edge-to-edge sheet, so
+   a row's name and its button stay close enough to read across. */
+.panel { max-width: 1520px; margin-left: auto; margin-right: auto; }
 .panel-h {
   display: flex; align-items: center; gap: 14px; padding: 14px 18px 12px;
   border-bottom: 1px solid var(--gc-border); background: var(--gc-surface-1);
