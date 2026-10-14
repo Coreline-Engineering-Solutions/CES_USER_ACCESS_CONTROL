@@ -1,4 +1,5 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { PickItem } from '../ui/picker/picker-logic';
 import { SessionService } from '../session/session.service';
 import { StockAccessApiService } from './stock-access-api.service';
 
@@ -35,6 +36,8 @@ export class DbUsersService {
   private readonly stockAccess = inject(StockAccessApiService);
 
   readonly users = signal<DbLinkedUser[]>([]);
+  /** The same people as `users`, shaped for the type-to-search picker (the email is both value and label). */
+  readonly options = computed<PickItem[]>(() => this.users().map((u) => ({ key: u.email, label: u.email })));
   readonly loading = signal(false);
 
   private lastDbGid = '';

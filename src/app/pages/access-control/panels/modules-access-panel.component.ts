@@ -1,3 +1,4 @@
+import { UserPickerComponent } from '../../../ui/picker/user-picker.component';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -36,7 +37,7 @@ interface ModuleUserGroup {
 @Component({
   selector: 'app-modules-access-panel',
   standalone: true,
-  imports: [CesIconComponent, FormsModule, SlicePipe],
+  imports: [CesIconComponent, FormsModule, SlicePipe, UserPickerComponent],
   templateUrl: './modules-access-panel.component.html',
 })
 export class ModulesAccessPanelComponent implements OnInit {

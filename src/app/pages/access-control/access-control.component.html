@@ -238,10 +238,7 @@
             <div class="field">
               <label>User email</label>
               @if (dbUsers.users().length > 0) {
-                <select class="sel" [ngModel]="assignEmail()" (ngModelChange)="assignEmail.set($event)">
-                  <option value="">— select a user —</option>
-                  @for (u of dbUsers.users(); track u.email) { <option [value]="u.email">{{ u.email }}</option> }
-                </select>
+                <ces-user-picker [options]="dbUsers.options()" [value]="assignEmail()" (valueChange)="assignEmail.set($event)" />
               } @else {
                 <input class="inp" [ngModel]="assignEmail()" (ngModelChange)="assignEmail.set($event)" placeholder="user@example.com">
               }
@@ -262,6 +259,20 @@
         <h3 style="font-size:12.5px;color:var(--gc-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
           Users on this database <span style="text-transform:none;letter-spacing:0">({{ userRows().length }})</span>
         </h3>
+        <div class="ulist-bar">
+          <input class="inp ulist-search" type="search" autocomplete="off" placeholder="Search people or roles…"
+                 aria-label="Search people or roles" [ngModel]="userSearch()" (ngModelChange)="setUserSearch($event)">
+          <select class="sel ulist-role" aria-label="Filter by role" [ngModel]="userRoleFilter()" (ngModelChange)="setUserRoleFilter($event)">
+            <option [value]="ANY_ROLE">All roles</option>
+            <option [value]="NO_ROLE">No role</option>
+            @for (r of roles(); track r.role_gid) { <option [value]="r.role_gid">{{ r.role_name }}</option> }
+          </select>
+          <label class="ulist-size">Show
+            <select class="sel" aria-label="Rows per page" [ngModel]="userPageSize()" (ngModelChange)="setUserPageSize($event)">
+              @for (n of userPageSizes; track n) { <option [ngValue]="n">{{ pageSizeLabel(n) }}</option> }
+            </select>
+          </label>
+        </div>
         @if (toolsetError()) {
           <div class="hiernote warn" style="margin:0 0 10px"><span class="i">!</span><span>{{ toolsetError() }}</span></div>
         }
@@ -270,7 +281,7 @@
         <table>
           <thead><tr><th>User</th><th>Roles</th><th>Toolsets</th>@if (canManageRoles()) { <th class="actions">Actions</th> }</tr></thead>
           <tbody>
-            @for (row of userRows(); track row.email) {
+            @for (row of userPage().items; track row.email) {
               <tr>
                 <td>{{ row.email }}</td>
                 <td>
@@ -315,6 +326,21 @@
             }
           </tbody>
         </table>
+      </div>
+
+      <div class="ulist-foot" aria-live="polite">
+        @if (userPage().total === 0) {
+          <span>No one matches{{ userSearch().trim() ? ' "' + userSearch().trim() + '"' : '' }}.</span>
+        } @else {
+          <span>Showing {{ userPage().from }} to {{ userPage().to }} of {{ userPage().total }}{{ userPage().total !== userRows().length ? ' (filtered from ' + userRows().length + ')' : '' }}</span>
+        }
+        @if (userPage().pageCount > 1) {
+          <span class="ulist-pager">
+            <button type="button" class="btn" [disabled]="userPage().page === 0" (click)="stepUserPage(-1)">Previous</button>
+            <span>Page {{ userPage().page + 1 }} of {{ userPage().pageCount }}</span>
+            <button type="button" class="btn" [disabled]="userPage().page >= userPage().pageCount - 1" (click)="stepUserPage(1)">Next</button>
+          </span>
+        }
       </div>
 
       @if (orphanAssignments().length > 0) {
@@ -528,10 +554,7 @@
         <div class="field">
           <label>User email</label>
           @if (dbUsers.users().length > 0) {
-            <select class="sel" [ngModel]="assignEmail()" (ngModelChange)="assignEmail.set($event)">
-              <option value="">— select a user —</option>
-              @for (u of dbUsers.users(); track u.email) { <option [value]="u.email">{{ u.email }}</option> }
-            </select>
+            <ces-user-picker [options]="dbUsers.options()" [value]="assignEmail()" (valueChange)="assignEmail.set($event)" />
           } @else {
             <input class="inp" [ngModel]="assignEmail()" (ngModelChange)="assignEmail.set($event)" placeholder="user@example.com">
           }
@@ -575,10 +598,7 @@
         <div class="field">
           <label>User email</label>
           @if (dbUsers.users().length > 0) {
-            <select class="sel" [ngModel]="revokeAssignmentEmail()" (ngModelChange)="revokeAssignmentEmail.set($event)">
-              <option value="">— select a user —</option>
-              @for (u of dbUsers.users(); track u.email) { <option [value]="u.email">{{ u.email }}</option> }
-            </select>
+            <ces-user-picker [options]="dbUsers.options()" [value]="revokeAssignmentEmail()" (valueChange)="revokeAssignmentEmail.set($event)" />
           } @else {
             <input class="inp" [ngModel]="revokeAssignmentEmail()" (ngModelChange)="revokeAssignmentEmail.set($event)" placeholder="user@example.com">
           }

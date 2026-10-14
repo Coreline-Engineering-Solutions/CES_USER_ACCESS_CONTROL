@@ -4,6 +4,9 @@ import { GisAccessApiService } from '../../../services/gis-access-api.service';
 import { SessionService } from '../../../session/session.service';
 import { DbUsersService } from '../../../services/db-users.service';
 import { GisProject } from '../../../services/gis-access.types';
+import { PickListComponent } from '../../../ui/picker/pick-list.component';
+import { UserPickerComponent } from '../../../ui/picker/user-picker.component';
+import { PickItem } from '../../../ui/picker/picker-logic';
 import {
   PersonOutcome,
   bulkSummary,
@@ -23,7 +26,7 @@ import {
 @Component({
   selector: 'app-gis-access-panel',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, PickListComponent, UserPickerComponent],
   templateUrl: './gis-access-panel.component.html',
 })
 export class GisAccessPanelComponent implements OnInit {
@@ -54,7 +57,6 @@ export class GisAccessPanelComponent implements OnInit {
 
   readonly showAssignModal = signal(false);
   readonly assignSelection = signal<Set<string>>(new Set());
-  readonly assignFilter = signal('');
   readonly assigning = signal(false);
   readonly assignError = signal<string | null>(null);
 
@@ -70,12 +72,18 @@ export class GisAccessPanelComponent implements OnInit {
     return list.filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
   });
 
-  readonly filteredAssignable = computed(() => {
-    const q = this.assignFilter().trim().toLowerCase();
-    const list = this.assignableProjects();
-    if (!q) return list;
-    return list.filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
-  });
+  /** The people the pickers offer: everyone linked to the working database. */
+  readonly userItems = computed<PickItem[]>(() =>
+    this.dbUsers.users().map((u) => ({ key: u.email, label: u.email })),
+  );
+  /** Projects this person does not have yet, for the Add projects dialog. */
+  readonly assignItems = computed<PickItem[]>(() =>
+    this.assignableProjects().map((p) => ({ key: p.name, label: p.name, sub: p.description || undefined })),
+  );
+  /** Every project, for the bulk dialog. */
+  readonly projectItems = computed<PickItem[]>(() =>
+    this.allProjects().map((p) => ({ key: p.name, label: p.name, sub: p.description || undefined })),
+  );
 
   ngOnInit(): void {
     void this.load();
@@ -121,22 +129,12 @@ export class GisAccessPanelComponent implements OnInit {
 
   openAssignModal(): void {
     this.assignSelection.set(new Set());
-    this.assignFilter.set('');
     this.assignError.set(null);
     this.showAssignModal.set(true);
   }
 
   closeAssignModal(): void {
     this.showAssignModal.set(false);
-  }
-
-  toggleAssignSelection(name: string): void {
-    this.assignSelection.update((set) => {
-      const next = new Set(set);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
   }
 
   async confirmAssign(): Promise<void> {
@@ -171,24 +169,12 @@ export class GisAccessPanelComponent implements OnInit {
   readonly showBulkModal = signal(false);
   readonly bulkUsers = signal<Set<string>>(new Set());
   readonly bulkProjects = signal<Set<string>>(new Set());
-  readonly bulkUserFilter = signal('');
-  readonly bulkProjectFilter = signal('');
   readonly bulkRunning = signal(false);
   readonly bulkProgress = signal<{ done: number; total: number } | null>(null);
   readonly bulkOutcomes = signal<PersonOutcome[] | null>(null);
   /** The projects of the run being shown, so a retry sends the same ones. */
   private bulkRunProjects: string[] = [];
 
-  readonly bulkFilteredUsers = computed(() => {
-    const q = this.bulkUserFilter().trim().toLowerCase();
-    const all = this.dbUsers.users().map((u) => u.email);
-    return q ? all.filter((e) => e.toLowerCase().includes(q)) : all;
-  });
-  readonly bulkFilteredProjects = computed(() => {
-    const q = this.bulkProjectFilter().trim().toLowerCase();
-    const all = this.allProjects();
-    return q ? all.filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)) : all;
-  });
   readonly bulkSummaryText = computed(() => {
     const o = this.bulkOutcomes();
     return o ? bulkSummary(o, this.bulkRunProjects.length) : '';
@@ -207,8 +193,6 @@ export class GisAccessPanelComponent implements OnInit {
   openBulkModal(): void {
     this.bulkUsers.set(new Set());
     this.bulkProjects.set(new Set());
-    this.bulkUserFilter.set('');
-    this.bulkProjectFilter.set('');
     this.bulkOutcomes.set(null);
     this.bulkProgress.set(null);
     this.showBulkModal.set(true);
@@ -219,41 +203,7 @@ export class GisAccessPanelComponent implements OnInit {
     this.showBulkModal.set(false);
   }
 
-  toggleBulkUser(email: string): void {
-    this.bulkUsers.update((s) => {
-      const next = new Set(s);
-      if (next.has(email)) next.delete(email);
-      else next.add(email);
-      return next;
-    });
-  }
-
-  toggleBulkProject(name: string): void {
-    this.bulkProjects.update((s) => {
-      const next = new Set(s);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }
-
   /** Tick or untick everyone who matches the filter. */
-  setAllBulkUsers(on: boolean): void {
-    this.bulkUsers.update((s) => {
-      const next = new Set(s);
-      for (const e of this.bulkFilteredUsers()) (on ? next.add(e) : next.delete(e));
-      return next;
-    });
-  }
-
-  setAllBulkProjects(on: boolean): void {
-    this.bulkProjects.update((s) => {
-      const next = new Set(s);
-      for (const p of this.bulkFilteredProjects()) (on ? next.add(p.name) : next.delete(p.name));
-      return next;
-    });
-  }
-
   async runBulk(): Promise<void> {
     if (!this.bulkCanRun()) return;
     this.bulkRunProjects = Array.from(this.bulkProjects());

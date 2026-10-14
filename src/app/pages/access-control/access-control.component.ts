@@ -1,3 +1,5 @@
+import { ANY_ROLE, NO_ROLE, USER_PAGE_SIZES, filterUserRows, pageSizeLabel, paginate } from './user-list';
+import { UserPickerComponent } from '../../ui/picker/user-picker.component';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { NgComponentOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -62,7 +64,7 @@ type BundleApplyRow = {
 @Component({
   selector: 'app-access-control',
   standalone: true,
-  imports: [FormsModule, NgComponentOutlet],
+  imports: [FormsModule, NgComponentOutlet, UserPickerComponent],
   templateUrl: './access-control.component.html',
 })
 export class AccessControlComponent implements OnInit {
@@ -902,6 +904,38 @@ export class AccessControlComponent implements OnInit {
       return { email: u.email, user_gid: u.user_gid, roles: Array.from(seen) };
     });
   });
+
+  // ─── Users tab: search, role filter, paging ─────────────────────────────
+  readonly userSearch = signal('');
+  readonly userRoleFilter = signal<string>(ANY_ROLE);
+  readonly userPageSize = signal(50);
+  readonly userPageIndex = signal(0);
+  readonly userPageSizes = USER_PAGE_SIZES;
+  readonly pageSizeLabel = pageSizeLabel;
+  readonly ANY_ROLE = ANY_ROLE;
+  readonly NO_ROLE = NO_ROLE;
+
+  readonly filteredUserRows = computed(() =>
+    filterUserRows(this.userRows(), this.userSearch(), this.userRoleFilter()),
+  );
+  readonly userPage = computed(() => paginate(this.filteredUserRows(), this.userPageIndex(), this.userPageSize()));
+
+  setUserSearch(value: string): void {
+    this.userSearch.set(value);
+    this.userPageIndex.set(0);
+  }
+  setUserRoleFilter(value: string): void {
+    this.userRoleFilter.set(value);
+    this.userPageIndex.set(0);
+  }
+  setUserPageSize(value: string | number): void {
+    this.userPageSize.set(Number(value));
+    this.userPageIndex.set(0);
+  }
+  stepUserPage(delta: number): void {
+    const p = this.userPage();
+    this.userPageIndex.set(Math.min(p.pageCount - 1, Math.max(0, p.page + delta)));
+  }
 
   /** Assignments whose user_gid matches nobody linked to this db - surfaced
    *  separately rather than hidden, since a role still assigned to someone

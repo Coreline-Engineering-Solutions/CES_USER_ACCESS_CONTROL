@@ -1,3 +1,5 @@
+import { PickItem } from '../../../ui/picker/picker-logic';
+import { UserPickerComponent } from '../../../ui/picker/user-picker.component';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TitleCasePipe } from '@angular/common';
@@ -47,7 +49,7 @@ const ORG_LABEL_OVERRIDES: Record<string, string> = {
 @Component({
   selector: 'app-stock-access-panel',
   standalone: true,
-  imports: [CesIconComponent, FormsModule, TitleCasePipe],
+  imports: [CesIconComponent, FormsModule, TitleCasePipe, UserPickerComponent],
   templateUrl: './stock-access-panel.component.html',
 })
 export class StockAccessPanelComponent implements OnInit {
@@ -740,6 +742,11 @@ export class StockAccessPanelComponent implements OnInit {
     if (!orgId) return [];
     return (this.usersByOrg().get(orgId) ?? []).filter((u) => StockAccessPanelComponent.UUID_RE.test(u.user_gid));
   });
+
+  /** The grant dialog's user list, shaped for the type-to-search picker: the id is what is saved, the email what is read. */
+  readonly grantUserOptions = computed<PickItem[]>(() =>
+    this.grantPickableUsers().map((u) => ({ key: u.user_gid, label: u.email })),
+  );
 
   /** Roles the target user already holds for the *exact* scope being edited
    *  — live over grantUserId/grantScope/grantLocationId/grantOrgId so the

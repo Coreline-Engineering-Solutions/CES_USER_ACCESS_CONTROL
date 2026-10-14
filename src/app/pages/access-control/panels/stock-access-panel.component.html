@@ -410,10 +410,7 @@
             @if (grantUserManualEntry()) {
               <input class="inp" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)" placeholder="user UUID">
             } @else {
-              <select class="sel" [ngModel]="grantUserId()" (ngModelChange)="grantUserId.set($event)">
-                <option value="">— select —</option>
-                @for (u of grantPickableUsers(); track u.user_gid) { <option [value]="u.user_gid">{{ u.email }}</option> }
-              </select>
+              <ces-user-picker [options]="grantUserOptions()" [value]="grantUserId()" (valueChange)="grantUserId.set($event)" />
             }
             <button type="button" class="btn" style="margin-top:6px;font-size:11px;padding:5px 9px"
                     (click)="grantUserId.set(''); grantUserManualEntry.set(!grantUserManualEntry())">

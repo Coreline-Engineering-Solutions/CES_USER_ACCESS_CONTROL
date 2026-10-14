@@ -40,10 +40,8 @@
       <div class="field">
         <label>User email</label>
         @if (dbUsers.users().length > 0) {
-          <select class="sel" [ngModel]="lookupEmail()" (ngModelChange)="lookupEmail.set($event)">
-            <option value="">— select a user —</option>
-            @for (u of dbUsers.users(); track u.email) { <option [value]="u.email">{{ u.email }}</option> }
-          </select>
+          <ces-user-picker [options]="userItems()" [value]="lookupEmail()" (valueChange)="lookupEmail.set($event)"
+                           placeholder="Search by email…" ariaLabel="User to look up" />
         } @else {
           <input class="inp" [ngModel]="lookupEmail()" (ngModelChange)="lookupEmail.set($event)"
                  (keydown.enter)="lookupUser()" placeholder="user@example.com">
@@ -145,34 +143,16 @@
 <!-- Add project(s) -->
 @if (showAssignModal()) {
   <div class="scrim on" role="dialog" aria-modal="true" aria-label="Add project">
-    <div class="modal" style="width:480px">
+    <div class="modal wide">
       <div class="m-h">
-        <h3>Add project</h3><span class="no">{{ activeEmail() }}</span>
+        <h3>Add projects</h3><span class="no">{{ activeEmail() }}</span>
         <button class="x" (click)="closeAssignModal()" aria-label="Close">✕</button>
       </div>
       <div class="m-sec">
         @if (assignError()) { <div class="hiernote warn" style="margin:0 0 12px"><span class="i">!</span><span>{{ assignError() }}</span></div> }
-        <div class="field">
-          <label>Filter</label>
-          <input class="inp" [ngModel]="assignFilter()" (ngModelChange)="assignFilter.set($event)" placeholder="Filter projects…">
-        </div>
-        <div class="tablewrap" style="margin-top:10px;max-height:280px;overflow-y:auto">
-          <table>
-            <tbody>
-              @for (p of filteredAssignable(); track p.project_id) {
-                <tr style="cursor:pointer" (click)="toggleAssignSelection(p.name)">
-                  <td style="width:24px">
-                    <input type="checkbox" [checked]="assignSelection().has(p.name)" (click)="$event.stopPropagation(); toggleAssignSelection(p.name)">
-                  </td>
-                  <td>{{ p.name }}</td>
-                  <td class="num">{{ p.description || '—' }}</td>
-                </tr>
-              } @empty {
-                <tr><td colspan="3" style="color:var(--gc-text-muted)">No projects left to add — this user already has everything, or nothing matches the filter.</td></tr>
-              }
-            </tbody>
-          </table>
-        </div>
+        <ces-pick-list [items]="assignItems()" [selected]="assignSelection()" (selectedChange)="assignSelection.set($event)"
+                       noun="projects" searchPlaceholder="Search projects by name or description…"
+                       emptyText="No projects left to add. This user already has everything." />
       </div>
       <div class="m-f">
         <button class="btn" (click)="closeAssignModal()">Cancel</button>
@@ -187,7 +167,7 @@
 <!-- Give several people several projects -->
 @if (showBulkModal()) {
   <div class="scrim on" role="dialog" aria-modal="true" aria-label="Give several people projects">
-    <div class="modal" style="width:760px;max-width:96vw">
+    <div class="modal wide">
       <div class="m-h">
         <h3>Give several people projects</h3>
         <button class="x" (click)="closeBulkModal()" [disabled]="bulkRunning()" aria-label="Close">✕</button>
@@ -220,55 +200,16 @@
           <p style="margin:0 0 10px;color:var(--gc-text-muted);font-size:12px">
             Everyone you tick gets every project you tick. Projects they already have are left as they are.
           </p>
-          <div style="display:flex;gap:16px;flex-wrap:wrap">
-            <div style="flex:1 1 300px;min-width:0">
-              <div class="field">
-                <label>People ({{ bulkUsers().size }} ticked)</label>
-                <input class="inp" [ngModel]="bulkUserFilter()" (ngModelChange)="bulkUserFilter.set($event)" placeholder="Filter people…">
-              </div>
-              <div style="margin:6px 0;display:flex;gap:8px">
-                <button class="btn" type="button" (click)="setAllBulkUsers(true)">Tick all shown</button>
-                <button class="btn" type="button" (click)="setAllBulkUsers(false)">Untick all shown</button>
-              </div>
-              <div class="tablewrap" style="max-height:300px;overflow-y:auto">
-                <table>
-                  <tbody>
-                    @for (email of bulkFilteredUsers(); track email) {
-                      <tr style="cursor:pointer" (click)="toggleBulkUser(email)">
-                        <td style="width:24px"><input type="checkbox" [checked]="bulkUsers().has(email)" (click)="$event.stopPropagation(); toggleBulkUser(email)" [attr.aria-label]="'Select ' + email"></td>
-                        <td>{{ email }}</td>
-                      </tr>
-                    } @empty {
-                      <tr><td style="color:var(--gc-text-muted)">No one matches the filter.</td></tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
+          <div class="pick-pair">
+            <div>
+              <h4 class="pick-heading">People</h4>
+              <ces-pick-list [items]="userItems()" [selected]="bulkUsers()" (selectedChange)="bulkUsers.set($event)"
+                             noun="people" searchPlaceholder="Search people…" emptyText="No people on this database." />
             </div>
-            <div style="flex:1 1 300px;min-width:0">
-              <div class="field">
-                <label>Projects ({{ bulkProjects().size }} ticked)</label>
-                <input class="inp" [ngModel]="bulkProjectFilter()" (ngModelChange)="bulkProjectFilter.set($event)" placeholder="Filter projects…">
-              </div>
-              <div style="margin:6px 0;display:flex;gap:8px">
-                <button class="btn" type="button" (click)="setAllBulkProjects(true)">Tick all shown</button>
-                <button class="btn" type="button" (click)="setAllBulkProjects(false)">Untick all shown</button>
-              </div>
-              <div class="tablewrap" style="max-height:300px;overflow-y:auto">
-                <table>
-                  <tbody>
-                    @for (p of bulkFilteredProjects(); track p.project_id) {
-                      <tr style="cursor:pointer" (click)="toggleBulkProject(p.name)">
-                        <td style="width:24px"><input type="checkbox" [checked]="bulkProjects().has(p.name)" (click)="$event.stopPropagation(); toggleBulkProject(p.name)" [attr.aria-label]="'Select ' + p.name"></td>
-                        <td>{{ p.name }}</td>
-                        <td class="num">{{ p.description || '—' }}</td>
-                      </tr>
-                    } @empty {
-                      <tr><td colspan="3" style="color:var(--gc-text-muted)">No projects match the filter.</td></tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
+            <div>
+              <h4 class="pick-heading">Projects</h4>
+              <ces-pick-list [items]="projectItems()" [selected]="bulkProjects()" (selectedChange)="bulkProjects.set($event)"
+                             noun="projects" searchPlaceholder="Search projects…" emptyText="No projects." />
             </div>
           </div>
         }

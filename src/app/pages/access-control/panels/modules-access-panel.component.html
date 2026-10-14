@@ -171,10 +171,7 @@
         <div class="field">
           <label>User</label>
           @if (dbUsers.users().length > 0) {
-            <select class="sel" [ngModel]="bulkEmail()" (ngModelChange)="bulkEmail.set($event)" [disabled]="bulkRunning()">
-              <option value="">— select a user —</option>
-              @for (u of dbUsers.users(); track u.email) { <option [value]="u.email">{{ u.email }}</option> }
-            </select>
+            <ces-user-picker [options]="dbUsers.options()" [value]="bulkEmail()" (valueChange)="bulkEmail.set($event)" [disabled]="bulkRunning()" />
           } @else {
             <input class="inp" [ngModel]="bulkEmail()" (ngModelChange)="bulkEmail.set($event)" [disabled]="bulkRunning()" placeholder="user@example.com">
           }
@@ -216,10 +213,7 @@
         <div class="field">
           <label>User email</label>
           @if (dbUsers.users().length > 0) {
-            <select class="sel" [ngModel]="moduleGrantEmail()" (ngModelChange)="moduleGrantEmail.set($event)">
-              <option value="">— select a user —</option>
-              @for (u of dbUsers.users(); track u.email) { <option [value]="u.email">{{ u.email }}</option> }
-            </select>
+            <ces-user-picker [options]="dbUsers.options()" [value]="moduleGrantEmail()" (valueChange)="moduleGrantEmail.set($event)" />
           } @else {
             <input class="inp" [ngModel]="moduleGrantEmail()" (ngModelChange)="moduleGrantEmail.set($event)" placeholder="user@example.com">
           }
