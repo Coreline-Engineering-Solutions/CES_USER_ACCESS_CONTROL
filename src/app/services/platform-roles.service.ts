@@ -1,3 +1,4 @@
+import { AUTH_API_BASE } from '../../auth-api-base';
 import { Injectable, inject } from '@angular/core';
 import { SessionService } from '../session/session.service';
 
@@ -27,7 +28,7 @@ import { SessionService } from '../session/session.service';
 @Injectable({ providedIn: 'root' })
 export class PlatformRolesService {
   private readonly session = inject(SessionService);
-  private readonly AUTH_API = 'https://auth-api-frankfurt.onrender.com/auth';
+  private readonly AUTH_API = AUTH_API_BASE + '/auth';
 
   private get sessionGid(): string {
     return this.session.session()?.session_gid ?? this.session.readCookie('session_gid') ?? '';

@@ -1,3 +1,4 @@
+import { AUTH_API_BASE } from '../auth-api-base';
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
@@ -37,9 +38,9 @@ export class UserSessionService {
     this.email = email || Cookies.get('user_email') || null;
     this.session_gid = session_gid || Cookies.get('session_gid') || null;
 
-    this.apiUrl = 'https://auth-api-frankfurt.onrender.com/auth';
-    this.imageApi = 'https://auth-api-frankfurt.onrender.com/images';
-    this.fileApi = 'https://auth-api-frankfurt.onrender.com/attachments';
+    this.apiUrl = AUTH_API_BASE + '/auth';
+    this.imageApi = AUTH_API_BASE + '/images';
+    this.fileApi = AUTH_API_BASE + '/attachments';
 
     this.user_gid = null;
     this.accessList = [];
@@ -173,7 +174,7 @@ export class UserSessionService {
     if (!this.session_gid) return null;
 
     try {
-      const res = await fetch(`https://auth-api-frankfurt.onrender.com/fetch-profile/${this.session_gid}`, {
+      const res = await fetch(`${AUTH_API_BASE}/fetch-profile/${this.session_gid}`, {
         method: 'GET'
       });
 

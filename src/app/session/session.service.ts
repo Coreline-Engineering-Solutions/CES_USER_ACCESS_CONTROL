@@ -1,3 +1,4 @@
+import { AUTH_API_BASE } from '../../auth-api-base';
 import { Injectable, computed, signal } from '@angular/core';
 import Cookies from 'js-cookie';
 import { UserSessionService } from '../../classes/ClassesAuth';
@@ -17,7 +18,7 @@ export type SessionInfo = {
 
 @Injectable({ providedIn: 'root' })
 export class SessionService {
-  private readonly AUTH_API = 'https://auth-api-frankfurt.onrender.com';
+  private readonly AUTH_API = AUTH_API_BASE;
 
   readonly session = signal<SessionInfo | null>(null);
   readonly loading = signal<boolean>(true);

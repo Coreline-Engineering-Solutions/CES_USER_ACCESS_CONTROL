@@ -1,3 +1,4 @@
+import { AUTH_API_BASE } from '../../auth-api-base';
 import { Injectable, inject, signal } from '@angular/core';
 import { SessionService } from '../session/session.service';
 
@@ -30,7 +31,7 @@ export interface NewUserDraft {
 @Injectable({ providedIn: 'root' })
 export class AdminUsersService {
   private readonly session = inject(SessionService);
-  private readonly AUTH_API = 'https://auth-api-frankfurt.onrender.com';
+  private readonly AUTH_API = AUTH_API_BASE;
 
   readonly working = signal(false);
 

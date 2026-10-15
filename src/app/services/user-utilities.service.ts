@@ -1,3 +1,4 @@
+import { AUTH_API_BASE } from '../../auth-api-base';
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { SessionService } from '../session/session.service';
 
@@ -43,7 +44,7 @@ function nameOf(entry: any): string {
 @Injectable({ providedIn: 'root' })
 export class UserUtilitiesService {
   private readonly session = inject(SessionService);
-  private readonly AUTH_API = 'https://auth-api-frankfurt.onrender.com/auth';
+  private readonly AUTH_API = AUTH_API_BASE + '/auth';
 
   /** Every utility the platform knows about (unfiltered). */
   readonly available = signal<string[]>([]);
