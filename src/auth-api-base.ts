@@ -3,4 +3,4 @@
  * address (the Durban cutover) is one edit per app, not a hunt through the code.
  * No trailing slash.
  */
-export const AUTH_API_BASE = 'https://auth-api-frankfurt.onrender.com';
+export const AUTH_API_BASE = 'https://auth.corelinegis.com';
